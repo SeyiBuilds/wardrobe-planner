@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Local settings and keys never go in the repo
+.env
+.env.*
+!.env.example
+
+# Vercel's local link to the project
+.vercel/
+
+# Editor and OS files
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

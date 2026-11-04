@@ -1,0 +1,371 @@
+:root {
+  /* Ink and the cover screens: indigo dye. */
+  --indigo: #18213a;
+  /* A neutral grey ground, so the colours in clothing photos read true. */
+  --ground: #e9eaeb;
+  --cloth: #f7f7f7;
+  --slate: #4b5568;
+  /* Contrast stitching: the one accent, used for what is active. */
+  --stitch: #e0a13a;
+  --stitch-deep: #8f5c0c;
+  --alert: #ffb4a8;
+
+  --gutter: 24px;
+  --display-width: 62%;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--indigo);
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+h1,
+h2,
+p,
+ol {
+  margin: 0;
+  padding: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--stitch-deep);
+  outline-offset: 2px;
+}
+
+.loading {
+  min-height: 100dvh;
+  background: var(--indigo);
+}
+
+/* Cover screens: sign in and setup */
+
+.cover {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 0 var(--gutter) calc(var(--gutter) + env(safe-area-inset-bottom));
+  background: var(--indigo);
+  color: var(--cloth);
+  overflow: hidden;
+}
+
+.cover :focus-visible {
+  outline-color: var(--stitch);
+}
+
+.cover-rail {
+  display: block;
+  width: 100%;
+  max-width: 375px;
+  margin-top: env(safe-area-inset-top);
+  margin-bottom: 28px;
+  overflow: visible;
+}
+
+.cover-rail-bar {
+  stroke: var(--cloth);
+  stroke-width: 1.5;
+  opacity: 0.5;
+}
+
+.cover-hanger {
+  fill: none;
+  stroke: var(--stitch);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: settle 1.8s ease-out both;
+}
+
+@keyframes settle {
+  0% {
+    transform: rotate(7deg);
+  }
+  30% {
+    transform: rotate(-4deg);
+  }
+  55% {
+    transform: rotate(2deg);
+  }
+  78% {
+    transform: rotate(-1deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover-hanger {
+    animation: none;
+  }
+}
+
+.cover-title {
+  font-size: clamp(5.5rem, 29vw, 8rem);
+  font-stretch: var(--display-width);
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.015em;
+}
+
+.cover-line {
+  margin-top: 16px;
+  font-size: 1.125rem;
+}
+
+.cover-note {
+  margin-top: 12px;
+  color: var(--ground);
+  opacity: 0.8;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 420px;
+  margin-top: auto;
+  padding-top: 48px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 0.875rem;
+}
+
+.field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid rgb(247 247 247 / 55%);
+  border-radius: 0;
+  background: transparent;
+  color: var(--cloth);
+  /* 16px or larger stops phones zooming in on focus. */
+  font-size: 1.0625rem;
+}
+
+.field input:-webkit-autofill {
+  -webkit-text-fill-color: var(--cloth);
+  box-shadow: 0 0 0 100px var(--indigo) inset;
+  caret-color: var(--cloth);
+}
+
+.login-message {
+  color: var(--alert);
+}
+
+.primary-button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--cloth);
+  color: var(--indigo);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* App shell */
+
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: 100%;
+  max-width: 560px;
+  min-height: 100dvh;
+  margin: 0 auto;
+}
+
+.shell-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: calc(12px + env(safe-area-inset-top)) var(--gutter) 0;
+}
+
+.text-button {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.shell-main {
+  padding: 0 var(--gutter) 40px;
+}
+
+.tabs {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--cloth);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border-top: 2px solid transparent;
+  color: var(--slate);
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+
+.tab.active {
+  border-top: 2px dashed var(--stitch-deep);
+  color: var(--indigo);
+  font-weight: 600;
+}
+
+.tab:focus-visible {
+  outline-offset: -4px;
+}
+
+/* Screens */
+
+.screen-title {
+  font-size: clamp(4rem, 20vw, 5.5rem);
+  font-stretch: var(--display-width);
+  font-weight: 500;
+  line-height: 0.95;
+  letter-spacing: -0.015em;
+}
+
+.screen-subtitle {
+  margin-top: 8px;
+  color: var(--slate);
+  font-size: 1.0625rem;
+}
+
+.screen-note {
+  margin-top: 16px;
+  color: var(--slate);
+}
+
+.placeholder-body {
+  max-width: 28em;
+  margin-top: 16px;
+  font-size: 1.125rem;
+}
+
+/* The week's rail of hangers */
+
+.week-rail {
+  display: block;
+  width: 100%;
+  margin-top: 28px;
+  overflow: visible;
+}
+
+.week-rail-bar {
+  stroke: var(--indigo);
+  stroke-width: 1.5;
+}
+
+.week-rail-hanger {
+  fill: none;
+  stroke: var(--slate);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.week-rail-letter {
+  fill: var(--slate);
+  font-size: 13px;
+}
+
+.is-today .week-rail-hanger {
+  stroke: var(--stitch-deep);
+  stroke-width: 2;
+}
+
+.is-today .week-rail-letter {
+  fill: var(--stitch-deep);
+  font-weight: 700;
+}
+
+/* Days */
+
+.days {
+  margin-top: 28px;
+  list-style: none;
+}
+
+.day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid rgb(24 33 58 / 18%);
+}
+
+.day-name {
+  font-size: 2.5rem;
+  font-stretch: var(--display-width);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.day-date {
+  margin-top: 4px;
+  color: var(--slate);
+  font-size: 0.9375rem;
+}
+
+.day-today {
+  color: var(--stitch-deep);
+  font-weight: 700;
+}
+
+.day-slot {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border: 1.5px dashed rgb(24 33 58 / 40%);
+  border-radius: 2px;
+}
+
+.day.is-today .day-slot {
+  border-color: var(--stitch-deep);
+}

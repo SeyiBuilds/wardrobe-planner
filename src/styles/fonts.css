@@ -1,0 +1,9 @@
+/* Self-hosted: font files live in the project and are never loaded from a font CDN. */
+@font-face {
+  font-family: "Archivo";
+  src: url("../assets/fonts/archivo-latin-standard-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-style: normal;
+  font-display: swap;
+}
