@@ -1,13 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { defaultWearsFor } from "../src/lib/pieceTypes.js";
-import { createGeminiLabeler } from "./gemini.js";
+import { createGroqLabeler } from "./groq.js";
 import type { Labeler } from "./labels.js";
 
 type Env = Record<string, string | undefined>;
 
 type Deps = {
   env: Env;
-  // Tests swap in a fake; production uses Gemini.
+  // Tests swap in a fake; production uses Groq.
   createLabeler?: (env: Env) => Labeler;
   fetch?: typeof fetch;
 };
@@ -22,7 +22,7 @@ function reply(status: number, body: Record<string, unknown>): Response {
 }
 
 const defaultLabeler = (env: Env) =>
-  createGeminiLabeler({ apiKey: env.GEMINI_API_KEY ?? "", model: env.GEMINI_MODEL || undefined });
+  createGroqLabeler({ apiKey: env.GROQ_API_KEY ?? "", model: env.GROQ_MODEL || undefined });
 
 // Reads one waiting piece's photo with AI and saves the labels. Runs as the signed-in user,
 // so Supabase's row rules still decide what it can see and change.
@@ -46,7 +46,7 @@ export async function handleLabelRequest(request: Request, deps: Deps): Promise<
 
   const supabaseUrl = env.VITE_SUPABASE_URL;
   const supabaseKey = env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  if (!supabaseUrl || !supabaseKey || !env.GEMINI_API_KEY) {
+  if (!supabaseUrl || !supabaseKey || !env.GROQ_API_KEY) {
     return reply(503, { status: "unavailable" });
   }
 

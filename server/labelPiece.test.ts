@@ -7,7 +7,7 @@ const PIECE_ID = "33333333-3333-4333-8333-333333333333";
 const env = {
   VITE_SUPABASE_URL: SUPABASE,
   VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
-  GEMINI_API_KEY: "test-gemini-key",
+  GROQ_API_KEY: "test-groq-key",
 };
 
 const waitingPiece = {
@@ -98,7 +98,7 @@ describe("handleLabelRequest", () => {
 
   it("says the AI is unavailable until its key is set", async () => {
     const response = await handleLabelRequest(post({ pieceId: PIECE_ID }), {
-      env: { ...env, GEMINI_API_KEY: undefined },
+      env: { ...env, GROQ_API_KEY: undefined },
     });
 
     expect(response.status).toBe(503);

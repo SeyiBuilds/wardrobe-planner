@@ -9,17 +9,17 @@ A private web app that plans a Monday to Sunday of outfits from photos of your o
 1. You take or choose a photo in the Wardrobe tab.
 2. On your phone, the app shrinks it, redraws it (which drops location and camera details) and blurs any faces it finds. If the face check can't run, the photo isn't sent.
 3. The photo goes to a private storage bucket that only your account can read.
-4. A server function sends it to Gemini, which labels the type, a name, the colour, how formal it is, which occasions it suits, and whether it's patterned. The answer is checked against fixed lists before it's saved.
+4. A server function sends it to a vision model on Groq, which labels the type, a name, the colour, how formal it is, which occasions it suits, and whether it's patterned. The answer is checked against fixed lists before it's saved.
 5. The app also measures the piece's real colours from the photo, on your phone.
 6. You check the labels and fix anything that's wrong.
 
-If the free Gemini allowance runs out, photos wait and are read the next time the app is opened after it resets. Gemini's free tier allows human review of what's sent, so photograph pieces against a plain background with nothing personal in the shot.
+If the free Groq allowance runs out, photos wait and are read the next time the app is opened after it resets. Photograph pieces against a plain background with nothing personal in the shot.
 
 ## Stack
 
 - React, TypeScript and Vite
 - Supabase for sign-in, the wardrobe table and photo storage
-- Gemini (free tier) for labelling, behind a Vercel function so the key never reaches the browser
+- Groq (free tier) for labelling, behind a Vercel function so the key never reaches the browser
 - MediaPipe face detection, running on the phone
 - Vercel for hosting
 
@@ -41,7 +41,7 @@ Fill in the values in `.env.local`, then start the app:
 npm run dev
 ```
 
-Without the Supabase values, the app shows a screen explaining what's missing. Without the Gemini key, photos are saved and wait to be read.
+Without the Supabase values, the app shows a screen explaining what's missing. Without the Groq key, photos are saved and wait to be read, and can be filled in by hand.
 
 ## Set up Supabase
 
@@ -53,11 +53,14 @@ Without the Supabase values, the app shows a screen explaining what's missing. W
 
 Only ever use the publishable key or the legacy anon key. These values ship to the browser, so the build stops if it finds a secret key.
 
-## Set up Gemini
+## Set up Groq
 
-1. Create an API key in [Google AI Studio](https://aistudio.google.com/apikey).
-2. Add it to Vercel as `GEMINI_API_KEY`, marked sensitive. It has no `VITE_` prefix, so it stays on the server.
-3. Optionally set `GEMINI_MODEL` to use a different model. The default is `gemini-3.8-flash`.
+The Groq account must belong to an adult: Groq requires account holders to be 18 or older.
+
+1. Create an API key in the [Groq console](https://console.groq.com/keys).
+2. In the console's data controls, turn on Zero Data Retention.
+3. Add the key to Vercel as `GROQ_API_KEY`, marked sensitive. It has no `VITE_` prefix, so it stays on the server.
+4. Optionally set `GROQ_MODEL` to use a different model that reads images. The default is `qwen/qwen3.8-27b`.
 
 ## Commands
 
