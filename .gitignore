@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Copied from node_modules at build time
+public/mediapipe/
 coverage/
 *.log
 
