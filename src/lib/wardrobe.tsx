@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { expandFiles } from "./expandFiles";
 import { drainQueue } from "./labelQueue";
 import { PhotoError, preparePhoto } from "./photo";
 import {
@@ -23,6 +24,7 @@ type Wardrobe = {
   pieces: Piece[] | null;
   loadError: string | null;
   links: Record<string, string>;
+  unpacking: boolean;
   adding: { done: number; total: number } | null;
   addErrors: string[];
   queue: QueueState;
@@ -50,6 +52,7 @@ export function WardrobeProvider({ client, children }: { client: SupabaseClient;
   const [pieces, setPieces] = useState<Piece[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [links, setLinks] = useState<Record<string, string>>({});
+  const [unpacking, setUnpacking] = useState(false);
   const [adding, setAdding] = useState<{ done: number; total: number } | null>(null);
   const [addErrors, setAddErrors] = useState<string[]>([]);
   const [queue, setQueue] = useState<QueueState>({ state: "idle" });
@@ -143,9 +146,21 @@ export function WardrobeProvider({ client, children }: { client: SupabaseClient;
     async (files: File[]) => {
       if (files.length === 0) return;
       setAddErrors([]);
+
+      // Zips and folders become a flat list of photos first.
+      setUnpacking(true);
+      let photos: File[];
       const errors: string[] = [];
-      for (const [index, file] of files.entries()) {
-        setAdding({ done: index, total: files.length });
+      try {
+        const expanded = await expandFiles(files);
+        photos = expanded.photos;
+        errors.push(...expanded.skipped);
+      } finally {
+        setUnpacking(false);
+      }
+
+      for (const [index, file] of photos.entries()) {
+        setAdding({ done: index, total: photos.length });
         try {
           const prepared = await preparePhoto(file);
           const piece = await addPiece(client, prepared);
@@ -192,6 +207,7 @@ export function WardrobeProvider({ client, children }: { client: SupabaseClient;
       pieces,
       loadError,
       links,
+      unpacking,
       adding,
       addErrors,
       queue,
@@ -203,7 +219,7 @@ export function WardrobeProvider({ client, children }: { client: SupabaseClient;
       reload: () => void load(),
       clearAddErrors: () => setAddErrors([]),
     }),
-    [pieces, loadError, links, adding, addErrors, queue, addPhotos, save, remove, readAgain, drain, load],
+    [pieces, loadError, links, unpacking, adding, addErrors, queue, addPhotos, save, remove, readAgain, drain, load],
   );
 
   return <WardrobeContext.Provider value={value}>{children}</WardrobeContext.Provider>;
