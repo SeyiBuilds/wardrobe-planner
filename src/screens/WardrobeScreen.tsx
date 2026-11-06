@@ -1,4 +1,13 @@
 import { useState, type ChangeEvent } from "react";
+
+// Phones don't offer a folder picker, so only show the button where one exists.
+function canChooseFolder(): boolean {
+  return (
+    "webkitdirectory" in HTMLInputElement.prototype &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: fine)").matches
+  );
+}
 import { Link } from "react-router";
 import type { Piece } from "../lib/pieces";
 import { PIECE_TYPES, singularLabel, type PieceType } from "../lib/pieceTypes";
@@ -62,6 +71,7 @@ function QueueNote({ queue, waiting, onRetry }: { queue: QueueState; waiting: nu
 export function WardrobeScreen() {
   const wardrobe = useWardrobe();
   const [filter, setFilter] = useState<PieceType | "all">("all");
+  const [folderPicker] = useState(canChooseFolder);
   const { pieces } = wardrobe;
 
   function handleFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -73,7 +83,7 @@ export function WardrobeScreen() {
   const counts = new Map<PieceType, number>();
   for (const piece of pieces ?? []) counts.set(piece.type, (counts.get(piece.type) ?? 0) + 1);
   const shown = (pieces ?? []).filter((piece) => filter === "all" || piece.type === filter);
-  const busy = wardrobe.adding !== null;
+  const busy = wardrobe.adding !== null || wardrobe.unpacking;
 
   return (
     <>
@@ -95,14 +105,47 @@ export function WardrobeScreen() {
           Take a photo
         </label>
         <label className={busy ? "action-button is-quiet is-disabled" : "action-button is-quiet"}>
-          <input className="file-input" type="file" accept="image/*" multiple disabled={busy} onChange={handleFiles} />
+          <input
+            className="file-input"
+            type="file"
+            accept="image/*,.zip,application/zip"
+            multiple
+            disabled={busy}
+            onChange={handleFiles}
+          />
           Choose photos
         </label>
+        {folderPicker && (
+          <label className={busy ? "action-button is-quiet is-disabled" : "action-button is-quiet"}>
+            <input
+              className="file-input"
+              type="file"
+              multiple
+              disabled={busy}
+              onChange={handleFiles}
+              ref={(input) => {
+                if (input) input.webkitdirectory = true;
+              }}
+            />
+            Choose a folder
+          </label>
+        )}
       </div>
       <p className="hint">
         Lay each piece flat or hang it against a plain wall, in good light. Keep faces and anything personal out of
         the shot.
       </p>
+      <p className="hint">
+        {folderPicker
+          ? "You can pick several photos at once, a .zip of photos, or a whole folder."
+          : "You can pick several photos at once, or a .zip of photos."}
+      </p>
+
+      {wardrobe.unpacking && (
+        <p className="note" role="status">
+          Opening your files…
+        </p>
+      )}
 
       {wardrobe.adding && (
         <p className="note" role="status">
@@ -112,7 +155,7 @@ export function WardrobeScreen() {
 
       {wardrobe.addErrors.length > 0 && (
         <div className="note is-alert" role="alert">
-          <p>{wardrobe.addErrors.length === 1 ? "One photo wasn't added." : "Some photos weren't added."}</p>
+          <p>{wardrobe.addErrors.length === 1 ? "One thing wasn't added." : "Some things weren't added."}</p>
           <ul>
             {wardrobe.addErrors.map((error) => (
               <li key={error}>{error}</li>
@@ -135,7 +178,7 @@ export function WardrobeScreen() {
         </div>
       )}
 
-      {pieces && pieces.length === 0 && !busy && (
+      {pieces && pieces.length === 0 && !busy && wardrobe.addErrors.length === 0 && (
         <p className="placeholder-body">Your wardrobe is empty. Add your first piece with a photo.</p>
       )}
 

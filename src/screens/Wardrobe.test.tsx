@@ -35,6 +35,7 @@ function wardrobe(overrides: Partial<ReturnType<typeof useWardrobe>> = {}) {
     pieces: [],
     loadError: null,
     links: {},
+    unpacking: false,
     adding: null,
     addErrors: [],
     queue: { state: "idle" },
@@ -70,6 +71,57 @@ describe("Wardrobe screen", () => {
     expect(screen.getByText(/Your wardrobe is empty/)).toBeInTheDocument();
     expect(screen.getByLabelText("Take a photo")).toHaveAttribute("capture", "environment");
     expect(screen.getByLabelText("Choose photos")).toHaveAttribute("multiple");
+  });
+
+  it("accepts zips as well as photos", () => {
+    wardrobe();
+    renderAt("/wardrobe");
+
+    expect(screen.getByLabelText("Choose photos")).toHaveAttribute("accept", "image/*,.zip,application/zip");
+    expect(screen.getByText(/a \.zip of photos/)).toBeInTheDocument();
+  });
+
+  it("offers a folder picker where the device has one", () => {
+    // The test browser has no folder picker, so give inputs one, as desktop browsers do.
+    const values = new WeakMap<HTMLInputElement, boolean>();
+    Object.defineProperty(HTMLInputElement.prototype, "webkitdirectory", {
+      configurable: true,
+      get(this: HTMLInputElement) {
+        return values.get(this) ?? false;
+      },
+      set(this: HTMLInputElement, value: boolean) {
+        values.set(this, value);
+      },
+    });
+    const matchMedia = vi.fn(() => ({ matches: true }) as MediaQueryList);
+    vi.stubGlobal("matchMedia", matchMedia);
+    wardrobe();
+    renderAt("/wardrobe");
+
+    const folder = screen.getByLabelText("Choose a folder") as HTMLInputElement;
+    expect(folder.webkitdirectory).toBe(true);
+    expect(matchMedia).toHaveBeenCalledWith("(pointer: fine)");
+    expect(screen.getByText(/or a whole folder/)).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+    delete (HTMLInputElement.prototype as { webkitdirectory?: boolean }).webkitdirectory;
+  });
+
+  it("leaves out the folder picker on phones", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false }) as MediaQueryList));
+    wardrobe();
+    renderAt("/wardrobe");
+
+    expect(screen.queryByLabelText("Choose a folder")).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("says when it's opening a zip or folder", () => {
+    wardrobe({ unpacking: true });
+    renderAt("/wardrobe");
+
+    expect(screen.getByText("Opening your files…")).toBeInTheDocument();
+    expect(screen.getByLabelText("Choose photos")).toBeDisabled();
   });
 
   it("hands chosen photos over to be added", async () => {
