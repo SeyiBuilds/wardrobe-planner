@@ -11,18 +11,27 @@ type GroqOptions = {
 
 type GroqError = { error?: { message?: string; code?: string; type?: string } };
 
+// How the request asks for the answer: as the strict schema or plain JSON, and with or without thinking first.
+type Attempt = { mode: "schema" | "json"; think: boolean };
+
+// Thinking first reads the photo more carefully, at the cost of a few seconds and more of the free allowance.
+export const THINKING_EFFORT = "medium";
+
 export function createGroqLabeler({ apiKey, model = DEFAULT_GROQ_MODEL, fetch: fetchFn = fetch }: GroqOptions): Labeler {
   return async ({ bytes, mimeType }) => {
     const image = `data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
 
-    // Strict schema mode first. Groq's docs disagree on which models support it,
-    // so if this model refuses the schema, ask for plain JSON and rely on parseLabels.
-    let response = await send(fetchFn, apiKey, body(model, image, "schema"));
-    if (response && response.status === 400) {
-      const error = await readJson<GroqError>(response.clone());
-      if (/json_schema|response_format|strict/i.test(error?.error?.message ?? "")) {
-        response = await send(fetchFn, apiKey, body(model, image, "json"));
-      }
+    // Start with the strict schema and thinking. Groq's docs disagree on which models support each,
+    // so if the model refuses one, drop just that one and ask again.
+    let attempt: Attempt = { mode: "schema", think: true };
+    let response = await send(fetchFn, apiKey, body(model, image, attempt));
+    for (let fallbacks = 0; response?.status === 400 && fallbacks < 2; fallbacks++) {
+      const message = (await readJson<GroqError>(response.clone()))?.error?.message ?? "";
+      const next = fallback(attempt, message);
+      if (!next) break;
+      console.warn(`Groq refused a setting, trying again without it: ${message}`);
+      attempt = next;
+      response = await send(fetchFn, apiKey, body(model, image, attempt));
     }
 
     if (!response) return { status: "failed", reason: "The AI service couldn't be reached." };
@@ -36,7 +45,14 @@ export function createGroqLabeler({ apiKey, model = DEFAULT_GROQ_MODEL, fetch: f
   };
 }
 
-function body(model: string, image: string, mode: "schema" | "json") {
+// Give up the schema before thinking: plain JSON still works with thinking, and parseLabels checks the answer either way.
+function fallback(attempt: Attempt, message: string): Attempt | null {
+  if (attempt.mode === "schema" && /json_schema|response_format|strict/i.test(message)) return { ...attempt, mode: "json" };
+  if (attempt.think && /reasoning/i.test(message)) return { ...attempt, think: false };
+  return null;
+}
+
+function body(model: string, image: string, { mode, think }: Attempt) {
   const instructions =
     mode === "schema"
       ? LABEL_PROMPT
@@ -53,9 +69,11 @@ function body(model: string, image: string, mode: "schema" | "json") {
         ],
       },
     ],
-    // Answer directly instead of thinking out loud first: faster, and keeps the reply pure JSON.
-    reasoning_effort: "none",
-    temperature: 0.2,
+    // Hidden thinking keeps the reply to just the JSON answer. Qwen's guidance is a temperature
+    // of 0.6 when thinking, since very low values can make it repeat itself.
+    ...(think
+      ? { reasoning_effort: THINKING_EFFORT, reasoning_format: "hidden", temperature: 0.6, top_p: 0.95 }
+      : { reasoning_effort: "none", temperature: 0.2 }),
     response_format:
       mode === "schema"
         ? { type: "json_schema", json_schema: { name: "piece_labels", strict: true, schema: LABEL_SCHEMA } }
