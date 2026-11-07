@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createGroqLabeler } from "./groq";
-import { parseLabels } from "./labels";
+import { FORMALITIES, PIECE_TYPES } from "../src/lib/pieceTypes";
+import { LABEL_PROMPT, parseLabels } from "./labels";
 
 const photo = { bytes: new Uint8Array([1, 2, 3]), mimeType: "image/jpeg" };
 
@@ -47,6 +48,10 @@ describe("parseLabels", () => {
     expect(labels?.occasions).toEqual(["casual"]);
   });
 
+  it("gives the AI a rule for every type and formality level", () => {
+    for (const { id } of [...PIECE_TYPES, ...FORMALITIES]) expect(LABEL_PROMPT).toContain(`- ${id}:`);
+  });
+
   it.each([
     ["an unknown type", { ...goodLabels, type: "cape" }],
     ["a missing name", { ...goodLabels, name: "   " }],
@@ -72,7 +77,46 @@ describe("createGroqLabeler", () => {
     expect(body.messages[0].content[1]).toEqual({ type: "image_url", image_url: { url: "data:image/jpeg;base64,AQID" } });
     expect(body.response_format.type).toBe("json_schema");
     expect(body.response_format.json_schema.strict).toBe(true);
-    expect(body.reasoning_effort).toBe("none");
+  });
+
+  it("asks the model to think before answering, without sending the thinking back", async () => {
+    const fetch = fakeFetch(reply(answer(JSON.stringify(goodLabels))));
+    await createGroqLabeler({ apiKey: "k", fetch })(photo);
+
+    const body = sentBody(fetch);
+    expect(body.reasoning_effort).toBe("medium");
+    expect(body.reasoning_format).toBe("hidden");
+    expect(body.temperature).toBe(0.6);
+  });
+
+  it("answers without thinking when the model won't take the thinking settings", async () => {
+    const fetch = fakeFetch(
+      reply({ error: { message: "reasoning_effort 'medium' is not supported for this model" } }, 400),
+      reply(answer(JSON.stringify(goodLabels))),
+    );
+
+    const result = await createGroqLabeler({ apiKey: "k", fetch })(photo);
+
+    expect(result).toEqual({ status: "done", labels: goodLabels });
+    const retry = sentBody(fetch, 1);
+    expect(retry.reasoning_effort).toBe("none");
+    expect(retry).not.toHaveProperty("reasoning_format");
+    expect(retry.response_format.type).toBe("json_schema");
+  });
+
+  it("drops the schema, then thinking, when the model refuses both", async () => {
+    const fetch = fakeFetch(
+      reply({ error: { message: "response_format json_schema is not supported with reasoning" } }, 400),
+      reply({ error: { message: "reasoning_format is not supported for this model" } }, 400),
+      reply(answer(JSON.stringify(goodLabels))),
+    );
+
+    const result = await createGroqLabeler({ apiKey: "k", fetch })(photo);
+
+    expect(result).toEqual({ status: "done", labels: goodLabels });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(sentBody(fetch, 1)).toMatchObject({ response_format: { type: "json_object" }, reasoning_effort: "medium" });
+    expect(sentBody(fetch, 2)).toMatchObject({ response_format: { type: "json_object" }, reasoning_effort: "none" });
   });
 
   it("returns the labels from a good answer", async () => {
@@ -100,6 +144,7 @@ describe("createGroqLabeler", () => {
     expect(result).toEqual({ status: "done", labels: goodLabels });
     expect(sentBody(fetch, 1).response_format).toEqual({ type: "json_object" });
     expect(sentBody(fetch, 1).messages[0].content[0].text).toContain('"colourName"');
+    expect(sentBody(fetch, 1).reasoning_format).toBe("hidden");
   });
 
   it("doesn't retry other bad requests", async () => {
