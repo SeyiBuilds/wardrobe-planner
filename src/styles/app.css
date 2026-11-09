@@ -31,6 +31,8 @@ body {
   font-family: "Archivo", system-ui, sans-serif;
   font-size: 1rem;
   line-height: 1.45;
+  /* Long words, such as photo file names, wrap instead of running off the screen. */
+  overflow-wrap: break-word;
 }
 
 h1,
@@ -203,6 +205,9 @@ input {
 
 .shell {
   display: grid;
+  /* One column that never grows past the screen. Without it, a wide row such as the
+     type filters stretched the whole page sideways on phones. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   width: 100%;
   max-width: 560px;
