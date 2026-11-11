@@ -16,6 +16,8 @@ export type Piece = {
   pattern: Pattern | null;
   wears_before_wash: number | null;
   wears_since_wash: number;
+  // Waiting in the laundry: out of rotation until marked clean.
+  in_wash: boolean;
   photo_path: string;
   label_status: "waiting" | "done" | "failed";
   reviewed: boolean;
