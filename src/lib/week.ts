@@ -73,19 +73,21 @@ export type PlanWindow = {
   days: string[];
   // The first day still to plan; earlier days of the week have already happened.
   planFrom: string;
-  // The weekly check covers unchecked days up to and including this one.
+  // The weekly check covers unchecked days up to and including this one: the whole week from
+  // Sunday evening, and otherwise only earlier weeks whose check was missed.
   checkUpTo: string;
 };
 
 export function planWindow(now: Date): PlanWindow {
   const today = dayKey(now);
   const sundayEvening = now.getDay() === 0 && now.getHours() >= CHECK_HOUR;
-  const weekStart = sundayEvening ? addDays(today, 1) : dayKey(weekOf(now)[0]);
+  const thisMonday = dayKey(weekOf(now)[0]);
+  const weekStart = sundayEvening ? addDays(today, 1) : thisMonday;
   return {
     today,
     sundayEvening,
     days: Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     planFrom: sundayEvening ? weekStart : today,
-    checkUpTo: sundayEvening ? today : addDays(today, -1),
+    checkUpTo: sundayEvening ? today : addDays(thisMonday, -1),
   };
 }

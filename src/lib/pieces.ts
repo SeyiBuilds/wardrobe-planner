@@ -28,7 +28,7 @@ export type Piece = {
 export type PieceChanges = Partial<
   Pick<
     Piece,
-    "type" | "name" | "colour_name" | "formality" | "occasions" | "pattern" | "wears_before_wash" | "reviewed" | "label_status"
+    "type" | "name" | "colour_name" | "formality" | "occasions" | "pattern" | "wears_before_wash" | "wears_since_wash" | "in_wash" | "reviewed" | "label_status"
   >
 >;
 

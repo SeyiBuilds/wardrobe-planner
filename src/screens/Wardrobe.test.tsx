@@ -21,6 +21,7 @@ function piece(overrides: Partial<Piece>): Piece {
     pattern: "plain",
     wears_before_wash: 1,
     wears_since_wash: 0,
+    in_wash: false,
     photo_path: "u1/p1.jpg",
     label_status: "done",
     reviewed: true,

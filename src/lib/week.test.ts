@@ -82,7 +82,7 @@ describe("planWindow", () => {
     expect(window.today).toBe("2026-11-11");
     expect(window.days).toEqual(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15"]);
     expect(window.planFrom).toBe("2026-11-11");
-    expect(window.checkUpTo).toBe("2026-11-10");
+    expect(window.checkUpTo).toBe("2026-11-08");
   });
 
   it("still plans this week on Sunday afternoon", () => {
@@ -90,7 +90,7 @@ describe("planWindow", () => {
 
     expect(window.sundayEvening).toBe(false);
     expect(window.planFrom).toBe("2026-11-15");
-    expect(window.checkUpTo).toBe("2026-11-14");
+    expect(window.checkUpTo).toBe("2026-11-08");
   });
 
   it("moves on to next week from 5pm on Sunday, checking today too", () => {
