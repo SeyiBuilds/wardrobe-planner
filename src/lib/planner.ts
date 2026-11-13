@@ -1,6 +1,8 @@
 import { beltMatchesShoes, readColour, sameAccent, standsOut, type ColourRead } from "./colourRules";
+import { familyLabel, nearestFamily } from "./palette";
 import type { Piece } from "./pieces";
-import type { PieceType } from "./pieceTypes";
+import type { Occasion, PieceType } from "./pieceTypes";
+import type { DayStyle, StyleOverrides, StyleProfile } from "./styleProfile";
 import { addDays, dayName, daysBetween, parseDay } from "./week";
 
 // The planner is plain code, not AI: it only ever picks from pieces that are clean, free that day
@@ -18,7 +20,10 @@ export const DAY_TYPES: { id: DayType; label: string }[] = [
 export const SLOTS = ["top", "trousers", "suit", "native_set", "shoes", "watch", "belt"] as const;
 export type Slot = (typeof SLOTS)[number];
 export type Slots = Partial<Record<Slot, string>>;
-export type Note = { slot?: Slot; text: string };
+// Notes say why a slot is empty or a combination repeats; a "why" note says why the outfit suits you.
+export type Note = { slot?: Slot; text: string; kind?: "why" };
+// Your style, if you've added inspiration: what the pictures show, and anything you've overridden.
+export type StyleInput = { profile: StyleProfile; overrides: StyleOverrides };
 export type DayPlan = { day: string; dayType: DayType; slots: Slots; notes: Note[] };
 // Any outfit the planner should know about: earlier weeks, and days of this week it isn't planning.
 // Unchecked ones still hold their pieces' wears.
@@ -69,6 +74,8 @@ type Info = {
   // The bold colour this piece brings, if any.
   accent: ColourRead | null;
   patterned: boolean;
+  // Its main colour's family in the shared palette, to compare with your inspiration.
+  family: string | null;
 };
 type Outfit = Partial<Record<Slot, Info>>;
 
@@ -81,7 +88,14 @@ function toInfo(piece: PlannerPiece): Info {
     : main && !main.neutral
       ? main
       : null;
-  return { piece, level: piece.formality ? LEVEL[piece.formality] : null, main, accent, patterned };
+  return {
+    piece,
+    level: piece.formality ? LEVEL[piece.formality] : null,
+    main,
+    accent,
+    patterned,
+    family: main ? nearestFamily(main.hex) : null,
+  };
 }
 
 function isLabelled(piece: PlannerPiece) {
@@ -97,7 +111,8 @@ function piecesOf(outfit: Outfit): Info[] {
 }
 
 // The first rule an outfit breaks, worded for the piece in `changed`; null if it keeps them all.
-function outfitProblem(outfit: Outfit, changed?: Slot): string | null {
+// `allowTonal` lifts the top-stands-out rule, once your inspiration shows tonal looks.
+function outfitProblem(outfit: Outfit, changed?: Slot, allowTonal = false): string | null {
   const parts = piecesOf(outfit);
 
   const levels = parts.flatMap((p) => (p.level === null ? [] : [p.level]));
@@ -116,7 +131,7 @@ function outfitProblem(outfit: Outfit, changed?: Slot): string | null {
   const bottom = outfit[bottomSlot]?.main;
   if (top && bottom) {
     if (!top.neutral && !bottom.neutral) return "Needs a neutral top or trousers";
-    if (!standsOut(top, bottom)) {
+    if (!allowTonal && !standsOut(top, bottom)) {
       return changed === "top" ? `Too close to the ${bottomSlot === "suit" ? "suit's" : "trousers'"} colour` : "Too close to the top's colour";
     }
   }
@@ -211,7 +226,86 @@ type Context = {
   infos: Info[];
   ledger: Ledger;
   random: () => number;
+  style?: StyleInput;
 };
+
+// Your style for one kind of day: that kind's own pictures, or all of them if it has none yet.
+type DayStyleView = { style: DayStyle; ownPictures: boolean; weight: number; boldShare: number; patternShare: number };
+
+// Style counts fully from 10 pictures, and only partly when borrowed from other kinds of day.
+const FULL_STYLE_AT = 10;
+const BORROWED_STYLE = 0.6;
+
+function styleView(input: StyleInput | undefined, dayType: DayType): DayStyleView | null {
+  if (!input || dayType === "none") return null;
+  const own = input.profile.byDay[dayType as Occasion];
+  const style = own.count > 0 ? own : input.profile.all;
+  if (style.count === 0) return null;
+  const share = (n: number) => n / style.count;
+  const lean = (choice: "less" | "more" | undefined, n: number) => (choice === "less" ? 0 : choice === "more" ? 0.8 : share(n));
+  return {
+    style,
+    ownPictures: own.count > 0,
+    weight: (Math.min(style.count, FULL_STYLE_AT) / FULL_STYLE_AT) * (own.count > 0 ? 1 : BORROWED_STYLE),
+    boldShare: lean(input.overrides.bold, style.bold),
+    patternShare: lean(input.overrides.patterns, style.patterned),
+  };
+}
+
+// Tonal looks are allowed if you say so, or once at least two pictures (a fifth or more) show them.
+function tonalAllowed(input: StyleInput | undefined, dayType: DayType): boolean {
+  if (input?.overrides.tonal === "always") return true;
+  if (input?.overrides.tonal === "never") return false;
+  const view = styleView(input, dayType);
+  return !!view && view.style.tonal >= 2 && view.style.tonal / view.style.count >= 0.2;
+}
+
+// How closely an outfit matches your style, and a line saying why it suits you.
+function styleScore(ctx: Context, outfit: Outfit, dayType: DayType): { score: number; why: string | null } {
+  const view = styleView(ctx.style, dayType);
+  if (!view) return { score: 0, why: null };
+  const { style } = view;
+  const parts = [outfit.top, outfit.trousers, outfit.suit, outfit.native_set].filter((p): p is Info => !!p);
+  if (parts.length === 0) return { score: 0, why: null };
+
+  let score = 0;
+  let why: string | null = null;
+  const where = view.ownPictures ? `your ${dayType} pictures` : "your pictures";
+
+  const top = outfit.top;
+  const bottom = outfit.trousers ?? outfit.suit;
+  if (top?.family && bottom?.family) {
+    const together = style.pairs[`${top.family}|${bottom.family}`] ?? 0;
+    score += (together / style.count) * 10;
+    if (together > 0) why = `${familyLabel(top.family)} and ${bottom.family}, like ${together} of ${where}.`;
+  }
+
+  const shares = parts.map((p) => (p.family ? (style.colours[p.family] ?? 0) / style.count : 0));
+  score += (shares.reduce((sum, s) => sum + s, 0) / parts.length) * 6;
+  if (!why) {
+    const favourite = parts.find((p, i) => p.family && shares[i] >= 0.3);
+    if (favourite) why = `${familyLabel(favourite.family!)} is one of your favourite colours.`;
+  }
+
+  if (top?.main && bottom?.main) {
+    if (style.contrastCount) {
+      const liked = style.contrastTotal / style.contrastCount;
+      score += 3 * Math.max(0, 1 - Math.abs(Math.abs(top.main.lightness - bottom.main.lightness) - liked) / 40);
+    }
+    if (!standsOut(top.main, bottom.main)) score += (style.tonal / style.count) * 6;
+  }
+
+  if (parts.some((p) => p.accent)) score += (view.boldShare - 0.35) * 20;
+  if (parts.some((p) => p.patterned)) score += (view.patternShare - 0.35) * 20;
+
+  const levels = parts.flatMap((p) => (p.level === null ? [] : [p.level]));
+  if (style.formalityCount && levels.length) {
+    const average = levels.reduce((sum, l) => sum + l, 0) / levels.length;
+    score += 3 * Math.max(0, 1 - Math.abs(average - style.formalityTotal / style.formalityCount));
+  }
+
+  return { score: score * view.weight, why };
+}
 
 // How much a repeat of a recent combination costs, and the note that explains it. Older repeats
 // cost less, so when one can't be avoided the oldest wins.
@@ -275,7 +369,7 @@ function emptyReason(ctx: Context, slot: Slot, day: string, dayType: DayType): s
 function bestAddition(ctx: Context, outfit: Outfit, slot: Slot, day: string, dayType: DayType, weight: number) {
   let best: { info: Info; score: number } | null = null;
   for (const info of freeFor(ctx, slot, day, dayType)) {
-    if (outfitProblem({ ...outfit, [slot]: info })) continue;
+    if (outfitProblem({ ...outfit, [slot]: info }, slot, tonalAllowed(ctx.style, dayType))) continue;
     const score =
       ctx.ledger.freshness(info.piece.id, day) * weight - weight * ctx.ledger.timesPlanned(info.piece.id) + ctx.random();
     if (!best || score > best.score) best = { info, score };
@@ -317,10 +411,12 @@ function finish(ctx: Context, base: Outfit, baseScore: number, day: string, dayT
   const slots = idsOf(outfit);
   const repeat = repeatCost(slots, day, ctx.ledger);
   if (repeat.note) notes.unshift({ text: repeat.note });
+  const { why } = styleScore(ctx, outfit, dayType);
+  if (why) notes.push({ kind: "why", text: why });
   return { slots, notes, score: score - repeat.cost };
 }
 
-function baseScore(ctx: Context, outfit: Outfit, day: string, avoid: Slots | undefined): number {
+function baseScore(ctx: Context, outfit: Outfit, day: string, dayType: DayType, avoid: Slots | undefined): number {
   const parts = piecesOf(outfit);
   let score = 0;
 
@@ -339,6 +435,7 @@ function baseScore(ctx: Context, outfit: Outfit, day: string, avoid: Slots | und
     if ((["top", "trousers", "suit", "native_set"] as const).every((slot) => slots[slot] === avoid[slot])) score -= AVOID;
   }
 
+  score += styleScore(ctx, outfit, dayType).score;
   return score + ctx.random() * NOISE;
 }
 
@@ -349,16 +446,17 @@ function planDay(ctx: Context, day: string, dayType: DayType, avoid: Slots | und
   const bottoms = [...freeFor(ctx, "trousers", day, dayType), ...freeFor(ctx, "suit", day, dayType)];
   const natives = freeFor(ctx, "native_set", day, dayType);
 
+  const allowTonal = tonalAllowed(ctx.style, dayType);
   const bases: { outfit: Outfit; score: number }[] = [];
   for (const top of tops) {
     for (const bottom of bottoms) {
       const outfit: Outfit = { top, [bottom.piece.type === "suit" ? "suit" : "trousers"]: bottom };
-      if (!outfitProblem(outfit)) bases.push({ outfit, score: baseScore(ctx, outfit, day, avoid) });
+      if (!outfitProblem(outfit, undefined, allowTonal)) bases.push({ outfit, score: baseScore(ctx, outfit, day, dayType, avoid) });
     }
   }
   for (const native of natives) {
     const outfit: Outfit = { native_set: native };
-    bases.push({ outfit, score: baseScore(ctx, outfit, day, avoid) });
+    bases.push({ outfit, score: baseScore(ctx, outfit, day, dayType, avoid) });
   }
 
   if (bases.length > 0) {
@@ -412,12 +510,14 @@ export function planDays({
   outfits,
   random = Math.random,
   avoid = {},
+  style,
 }: {
   days: { day: string; dayType: DayType }[];
   pieces: PlannerPiece[];
   outfits: KnownOutfit[];
   random?: () => number;
   avoid?: Record<string, Slots>;
+  style?: StyleInput;
 }): DayPlan[] {
   const planning = new Set(days.map((d) => d.day));
   const known = outfits.filter((outfit) => !planning.has(outfit.day));
@@ -425,7 +525,7 @@ export function planDays({
 
   let best: { total: number; results: Map<string, DayResult> } | null = null;
   for (let run = 0; run < RUNS; run++) {
-    const ctx: Context = { infos, ledger: new Ledger(known), random };
+    const ctx: Context = { infos, ledger: new Ledger(known), random, style };
     const order = run === 0 ? [...days] : shuffle([...days], random);
     const results = new Map<string, DayResult>();
     let total = 0;
@@ -454,6 +554,7 @@ export function swapChoices({
   slot,
   pieces,
   outfits,
+  style,
 }: {
   day: string;
   dayType: DayType;
@@ -461,6 +562,7 @@ export function swapChoices({
   slot: Slot;
   pieces: PlannerPiece[];
   outfits: KnownOutfit[];
+  style?: StyleInput;
 }): { id: string; clash: string | null }[] {
   const ledger = new Ledger(outfits.filter((outfit) => outfit.day !== day));
   const infos = pieces.map(toInfo);
@@ -476,7 +578,7 @@ export function swapChoices({
     if (!goodFor(info, dayType)) return `Not marked Good for ${dayType}`;
     if (ledger.usedOn(info.piece.id, addDays(day, -1))) return "Worn the day before";
     if (ledger.usedOn(info.piece.id, addDays(day, 1))) return "Planned for the next day";
-    return outfitProblem({ ...rest, [slot]: info }, slot);
+    return outfitProblem({ ...rest, [slot]: info }, slot, tonalAllowed(style, dayType));
   };
 
   return infos

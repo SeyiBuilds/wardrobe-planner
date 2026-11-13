@@ -1,4 +1,5 @@
 import { beltMatchesShoes, readColour, sameAccent, standsOut } from "./colourRules";
+import { buildProfile, type Reading, type StyleOverrides } from "./styleProfile";
 import { defaultWearsFor, type Occasion, type PieceType } from "./pieceTypes";
 import { planDays, swapChoices, SLOTS, type DayPlan, type DayType, type KnownOutfit, type PlannerPiece } from "./planner";
 import { addDays, daysBetween } from "./week";
@@ -517,5 +518,135 @@ describe("swapChoices", () => {
         { id: "worn-yesterday", clash: "Worn the day before" },
       ]),
     );
+  });
+});
+
+describe("planDays with your style", () => {
+  function readings(n: number, day: Reading["day_type"], top: string, bottom: string): Reading[] {
+    return Array.from({ length: n }, () => ({
+      day_type: day,
+      formality: "smart" as const,
+      pieces: [
+        { kind: "top", colour: top, patterned: false },
+        { kind: "trousers", colour: bottom, patterned: false },
+      ],
+    }));
+  }
+
+  function styled(list: Reading[], overrides: StyleOverrides = {}) {
+    return { profile: buildProfile(list), overrides };
+  }
+
+  const pairWardrobe = () => [
+    piece("top", WHITE, { id: "white-top" }),
+    piece("top", LIGHT_BLUE, { id: "blue-top" }),
+    piece("trousers", NAVY, { id: "navy" }),
+    piece("trousers", GREY, { id: "grey" }),
+    piece("shoes", BLACK),
+  ];
+
+  it("prefers the colour pairs your pictures show", () => {
+    const pieces = pairWardrobe();
+    const style = styled(readings(10, "corporate", "white", "grey"));
+
+    const picks = [...Array(10).keys()].map((seed) => {
+      const [day] = planDays({ days: week(["corporate"]), pieces, outfits: [], random: seeded(seed), style });
+      return `${day.slots.top}+${day.slots.trousers}`;
+    });
+
+    expect(picks.filter((pick) => pick === "white-top+grey").length).toBeGreaterThanOrEqual(9);
+  });
+
+  it("says why in one line", () => {
+    const [day] = planDays({
+      days: week(["corporate"]),
+      pieces: pairWardrobe(),
+      outfits: [],
+      random: seeded(1),
+      style: styled(readings(10, "corporate", "white", "grey")),
+    });
+
+    expect(day.notes).toContainEqual({ kind: "why", text: "White and grey, like 10 of your corporate pictures." });
+  });
+
+  it("uses all your pictures for a kind of day that has none of its own", () => {
+    const [day] = planDays({
+      days: week(["casual"]),
+      pieces: pairWardrobe(),
+      outfits: [],
+      random: seeded(1),
+      style: styled(readings(10, "corporate", "white", "grey")),
+    });
+
+    expect(day.notes).toContainEqual({ kind: "why", text: "White and grey, like 10 of your pictures." });
+  });
+
+  const tonalWardrobe = () => [
+    piece("top", "#e3d5b8", { id: "beige-top" }),
+    piece("trousers", "#f3ead3", { id: "cream-trousers" }),
+    piece("shoes", BROWN),
+  ];
+
+  it("keeps a top that blends into the trousers out, without pictures of tonal looks", () => {
+    const [day] = planDays({ days: week(["casual"]), pieces: tonalWardrobe(), outfits: [], random: seeded(1) });
+
+    expect(day.slots.trousers).toBeUndefined();
+  });
+
+  it("allows tonal looks once your pictures show them", () => {
+    const [day] = planDays({
+      days: week(["casual"]),
+      pieces: tonalWardrobe(),
+      outfits: [],
+      random: seeded(1),
+      style: styled(readings(3, "casual", "beige", "cream")),
+    });
+
+    expect(day.slots).toMatchObject({ top: "beige-top", trousers: "cream-trousers" });
+  });
+
+  it("follows your choice over the pictures", () => {
+    const never = planDays({
+      days: week(["casual"]),
+      pieces: tonalWardrobe(),
+      outfits: [],
+      random: seeded(1),
+      style: styled(readings(3, "casual", "beige", "cream"), { tonal: "never" }),
+    });
+    const always = planDays({
+      days: week(["casual"]),
+      pieces: tonalWardrobe(),
+      outfits: [],
+      random: seeded(1),
+      style: styled([], { tonal: "always" }),
+    });
+
+    expect(never[0].slots.trousers).toBeUndefined();
+    expect(always[0].slots.trousers).toBe("cream-trousers");
+  });
+
+  it("uses bold colours less when your pictures rarely have them", () => {
+    const pieces = [piece("top", RED, { id: "red" }), piece("top", WHITE, { id: "white" }), piece("trousers", NAVY), piece("shoes", BLACK)];
+    // The white top was worn last week, so on freshness alone the red one would usually win.
+    const history: KnownOutfit[] = [{ day: addDays(MONDAY, -7), slots: { top: "white" }, checked: true }];
+    const style = styled(readings(10, "casual", "grey", "black"));
+    const picks = (withStyle: boolean) =>
+      [...Array(20).keys()].map(
+        (seed) =>
+          planDays({ days: week(["casual"]), pieces, outfits: history, random: seeded(seed), style: withStyle ? style : undefined })[0]
+            .slots.top,
+      );
+
+    expect(picks(false).filter((id) => id === "red").length).toBeGreaterThanOrEqual(11);
+    expect(picks(true).filter((id) => id === "white").length).toBeGreaterThanOrEqual(18);
+  });
+
+  it("plans just as before when there are no pictures yet", () => {
+    const pieces = basicWardrobe();
+
+    const plain = plan(WEEKDAYS, pieces, [], 3);
+    const empty = planDays({ days: WEEKDAYS, pieces, outfits: [], random: seeded(3), style: styled([]) });
+
+    expect(empty).toEqual(plain);
   });
 });
