@@ -4,9 +4,12 @@ import type { ReactNode } from "react";
 import type { Piece } from "./pieces";
 import { PlanningProvider, usePlanning } from "./planning";
 import type { Outfit } from "./plans";
+import { useStyleInput } from "./style";
+import { buildProfile } from "./styleProfile";
 import { useWardrobe } from "./wardrobe";
 
 vi.mock("./wardrobe", () => ({ useWardrobe: vi.fn() }));
+vi.mock("./style", () => ({ useStyleInput: vi.fn(() => undefined) }));
 
 let n = 0;
 function piece(type: Piece["type"], hex: string, fields: Partial<Piece> = {}): Piece {
@@ -242,5 +245,28 @@ describe("PlanningProvider", () => {
     expect(rpc).toHaveBeenCalledWith("finish_check", { checked: [], washed: [PIECES[0].id] });
     expect(reload).toHaveBeenCalled();
     expect(save).toHaveBeenCalledWith(PIECES[1].id, { in_wash: true });
+  });
+});
+
+describe("PlanningProvider with your style", () => {
+  afterEach(() => vi.mocked(useStyleInput).mockReturnValue(undefined));
+
+  it("plans with your style and says why", async () => {
+    const readings = Array.from({ length: 10 }, () => ({
+      day_type: "corporate" as const,
+      formality: "smart" as const,
+      pieces: [
+        { kind: "top", colour: "white", patterned: false },
+        { kind: "trousers", colour: "navy", patterned: false },
+      ],
+    }));
+    vi.mocked(useStyleInput).mockReturnValue({ profile: buildProfile(readings), overrides: {} });
+    const { hook, db } = setup(WEDNESDAY);
+    await waitFor(() => expect(hook.result.current.outfits).not.toBeNull());
+
+    await act(() => hook.result.current.planMissing());
+
+    const wednesday = db.outfits.find((o) => o.day === "2026-11-11")!;
+    expect(wednesday.notes).toContainEqual({ kind: "why", text: "White and navy, like 10 of your corporate pictures." });
   });
 });

@@ -90,11 +90,20 @@ export function DayScreen() {
         </label>
       )}
 
-      {outfit.notes.map((note) => (
-        <p key={note.text} className="note">
-          {note.text}
-        </p>
-      ))}
+      {outfit.notes
+        .filter((note) => note.kind === "why")
+        .map((note) => (
+          <p key={note.text} className="why-line">
+            {note.text}
+          </p>
+        ))}
+      {outfit.notes
+        .filter((note) => note.kind !== "why")
+        .map((note) => (
+          <p key={note.text} className="note">
+            {note.text}
+          </p>
+        ))}
       {error}
 
       {outfit.day_type === "none" ? (

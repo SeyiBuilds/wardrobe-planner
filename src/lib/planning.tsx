@@ -20,6 +20,7 @@ import {
   type Outfit,
   type WeekStatus,
 } from "./plans";
+import { useStyleInput } from "./style";
 import { useWardrobe } from "./wardrobe";
 import { addDays, dayKey, weekOf } from "./week";
 
@@ -79,10 +80,14 @@ export function PlanningProvider({
   const piecesRef = useRef(wardrobe.pieces);
   const nowRef = useRef(now);
   const randomRef = useRef(random);
+  // Your style, if you have one, steers every plan and swap list.
+  const style = useStyleInput();
+  const styleRef = useRef(style);
   weekRef.current = usualWeek;
   piecesRef.current = wardrobe.pieces;
   nowRef.current = now;
   randomRef.current = random;
+  styleRef.current = style;
 
   const replaceAll = useCallback((next: Outfit[]) => {
     outfitsRef.current = next;
@@ -152,7 +157,14 @@ export function PlanningProvider({
   const planAndSave = useCallback(
     async (days: { day: string; dayType: DayType }[], pieces: Piece[], saved: Outfit[], avoid: Record<string, Slots> = {}) => {
       if (days.length === 0) return;
-      const plans = planDays({ days, pieces, outfits: knownOutfits(saved), random: randomRef.current, avoid });
+      const plans = planDays({
+        days,
+        pieces,
+        outfits: knownOutfits(saved),
+        random: randomRef.current,
+        avoid,
+        style: styleRef.current,
+      });
       const userId = await currentUserId(client);
       merge(await saveOutfits(client, plans.map((plan) => rowFromPlan(plan, userId))));
     },
@@ -213,6 +225,7 @@ export function PlanningProvider({
         slot,
         pieces,
         outfits: knownOutfits(outfitsRef.current, day),
+        style: styleRef.current,
       }).map((choice) => ({ piece: byId.get(choice.id)!, clash: choice.clash }));
     },
     // Recomputed when outfits or pieces change.

@@ -1,16 +1,9 @@
 import { useState, type ChangeEvent } from "react";
 
-// Phones don't offer a folder picker, so only show the button where one exists.
-function canChooseFolder(): boolean {
-  return (
-    "webkitdirectory" in HTMLInputElement.prototype &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(pointer: fine)").matches
-  );
-}
 import { Link } from "react-router";
 import type { Piece } from "../lib/pieces";
 import { PIECE_TYPES, singularLabel, type PieceType } from "../lib/pieceTypes";
+import { canChooseFolder } from "../lib/folderPicker";
 import { useWardrobe, type QueueState } from "../lib/wardrobe";
 
 function waitingCount(pieces: Piece[]) {
