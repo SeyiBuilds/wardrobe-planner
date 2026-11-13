@@ -178,6 +178,17 @@ describe("when signed in", () => {
     expect(window.location.pathname).toBe("/laundry");
   });
 
+  it("opens the Style tab for adding inspiration", async () => {
+    const user = userEvent.setup();
+    const { client } = fakeClient({ session: signedIn });
+    render(<App client={client} />);
+
+    await user.click(await screen.findByRole("link", { name: "Style" }));
+
+    expect(screen.getByRole("heading", { name: "Style", level: 1 })).toBeInTheDocument();
+    expect(screen.getByLabelText("Choose pictures")).toBeInTheDocument();
+  });
+
   it("sends an unknown address back to this week", async () => {
     window.history.pushState({}, "", "/nothing-here");
     const { client } = fakeClient({ session: signedIn });

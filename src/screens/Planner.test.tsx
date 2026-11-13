@@ -203,6 +203,15 @@ describe("Day page", () => {
     expect(screen.getByText("No clean trousers left for corporate days.")).toBeInTheDocument();
   });
 
+  it("says why the outfit suits you, apart from the notes", () => {
+    setup({
+      outfits: [outfit(DAY, { ...DRESSED, notes: [{ kind: "why", text: "White and navy, like 4 of your corporate pictures." }] })],
+    });
+    renderAt(`/day/${DAY}`);
+
+    expect(screen.getByText("White and navy, like 4 of your corporate pictures.")).toHaveClass("why-line");
+  });
+
   it("changes the kind of day for this week only", async () => {
     const planning = setup({ outfits: [outfit(DAY, DRESSED)] });
     renderAt(`/day/${DAY}`);

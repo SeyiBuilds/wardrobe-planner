@@ -1,8 +1,8 @@
 import type { Piece } from "./pieces";
 
-export type LabelResponse =
-  | { status: "done"; piece: Piece }
-  | { status: "failed"; reason: string; piece?: Piece }
+export type LabelResponse<T = Piece> =
+  | { status: "done"; piece: T }
+  | { status: "failed"; reason: string; piece?: T }
   | { status: "waiting"; retryAfterSeconds: number | null; daily: boolean }
   | { status: "unavailable" }
   | { status: "error"; reason: string };
@@ -14,11 +14,11 @@ export type QueueStop =
   | { reason: "error"; message: string }
   | { reason: "stopped" };
 
-type DrainOptions = {
-  nextWaiting: () => Piece | undefined;
-  label: (pieceId: string) => Promise<LabelResponse>;
-  onReading: (piece: Piece) => void;
-  onPiece: (piece: Piece) => void;
+type DrainOptions<T> = {
+  nextWaiting: () => T | undefined;
+  label: (id: string) => Promise<LabelResponse<T>>;
+  onReading: (item: T) => void;
+  onPiece: (item: T) => void;
   wait: (ms: number) => Promise<void>;
   isStopped: () => boolean;
   // Free-tier limits are per minute as well as per day, so space the requests out.
@@ -29,7 +29,7 @@ type DrainOptions = {
 };
 
 // Reads waiting photos one at a time until none are left or the AI can't take more.
-export async function drainQueue({
+export async function drainQueue<T extends { id: string }>({
   nextWaiting,
   label,
   onReading,
@@ -39,7 +39,7 @@ export async function drainQueue({
   spacingMs = 4000,
   maxShortWaitSeconds = 90,
   maxShortWaits = 3,
-}: DrainOptions): Promise<QueueStop> {
+}: DrainOptions<T>): Promise<QueueStop> {
   let shortWaits = 0;
 
   while (!isStopped()) {

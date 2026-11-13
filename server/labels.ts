@@ -26,6 +26,12 @@ export type LabelResult =
   | { status: "waiting"; retryAfterSeconds: number | null; daily: boolean }
   | { status: "failed"; reason: string };
 
+// Shared with the inspiration reader, so a "smart" piece and a "smart" look mean the same thing.
+export const FORMALITY_RULES = `formality: how dressed up the piece is.
+- relaxed: everyday and sporty: T-shirts, graphic tees, hoodies, sweatshirts, jerseys, joggers, shorts, cargo trousers, ripped or faded jeans, sneakers and trainers, slides, sandals, caps, sports and digital watches, smartwatches, and canvas or woven belts.
+- smart: neat but not a suit: polos, casual button-down and Oxford shirts, knit jumpers, chinos, dark clean jeans, overshirts, bombers, unstructured blazers, loafers, suede shoes, clean leather sneakers, chelsea and desert boots, and everyday leather belts. Everyday native wear such as plain kaftans, senators and buba and sokoto is smart.
+- formal: suits, tailored blazers, crisp dress shirts made to take a tie, pressed dress trousers, polished leather oxfords, derbies and brogues, ties, bow ties, dress watches on a leather strap or slim metal bracelet, and slim polished leather belts. Agbada, and native wear in rich fabric such as aso-oke, lace or heavy embroidery, is formal.`;
+
 // Clear rules with examples, because the AI got types and formality plainly wrong without them.
 export const LABEL_PROMPT = `You are labelling one piece of clothing or one accessory for a private wardrobe app in Nigeria.
 The photo shows a single piece, usually laid flat or hung up against a plain background.
@@ -45,10 +51,7 @@ type: pick the one that fits best.
 - belt: any belt.
 - accessory: anything else worn: caps and hats (including fila), ties, bow ties, pocket squares, bags, sunglasses, bracelets, chains, rings, cufflinks and scarves.
 
-formality: how dressed up the piece is.
-- relaxed: everyday and sporty: T-shirts, graphic tees, hoodies, sweatshirts, jerseys, joggers, shorts, cargo trousers, ripped or faded jeans, sneakers and trainers, slides, sandals, caps, sports and digital watches, smartwatches, and canvas or woven belts.
-- smart: neat but not a suit: polos, casual button-down and Oxford shirts, knit jumpers, chinos, dark clean jeans, overshirts, bombers, unstructured blazers, loafers, suede shoes, clean leather sneakers, chelsea and desert boots, and everyday leather belts. Everyday native wear such as plain kaftans, senators and buba and sokoto is smart.
-- formal: suits, tailored blazers, crisp dress shirts made to take a tie, pressed dress trousers, polished leather oxfords, derbies and brogues, ties, bow ties, dress watches on a leather strap or slim metal bracelet, and slim polished leather belts. Agbada, and native wear in rich fabric such as aso-oke, lace or heavy embroidery, is formal.
+${FORMALITY_RULES}
 
 name: 2 to 5 plain words: the colour, then the kind of piece, like "Navy Oxford shirt", "Black slim chinos", "Tan suede loafers", "Silver steel watch" or "Wine aso-oke agbada". Use the same colour as colourName.
 

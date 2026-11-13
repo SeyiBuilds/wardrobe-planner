@@ -882,6 +882,85 @@ button.outfit-slot {
   margin: 0;
 }
 
+/* Why a day's outfit suits you: one quiet line, not a warning. */
+.why-line {
+  margin-top: 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--stitch);
+  color: var(--slate);
+  font-style: italic;
+}
+
+/* Style */
+
+.style-heading {
+  margin-top: 32px;
+}
+
+.style-cards {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.style-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--cloth);
+}
+
+.style-card .hint {
+  margin-top: 0;
+}
+
+.style-card-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.style-card-count {
+  color: var(--slate);
+  font-weight: 400;
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reading-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid rgb(24 33 58 / 18%);
+}
+
+.reading .form-field {
+  width: 100%;
+}
+
+.reading-text {
+  font-weight: 600;
+}
+
+.reading-text.is-pending {
+  color: var(--stitch-deep);
+}
+
 @media (min-width: 520px) {
   .pieces {
     grid-template-columns: repeat(3, minmax(0, 1fr));
