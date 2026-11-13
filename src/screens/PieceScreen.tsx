@@ -12,6 +12,7 @@ import {
   type Pattern,
   type PieceType,
 } from "../lib/pieceTypes";
+import { usePlanning } from "../lib/planning";
 import { useWardrobe } from "../lib/wardrobe";
 
 type Draft = {
@@ -42,6 +43,7 @@ export function PieceScreen() {
   const { pieceId } = useParams();
   const navigate = useNavigate();
   const wardrobe = useWardrobe();
+  const planning = usePlanning();
   const piece = wardrobe.pieces?.find((p) => p.id === pieceId);
 
   const [draft, setDraft] = useState<Draft | null>(piece ? draftFrom(piece) : null);
@@ -152,6 +154,38 @@ export function PieceScreen() {
           </ul>
           <span className="swatches-label">Measured from the photo</span>
         </div>
+      )}
+
+      {piece.in_wash ? (
+        <div className="note" role="status">
+          <p>In the wash. It stays out of your outfits until it's clean.</p>
+          <button
+            type="button"
+            className="text-button is-strong"
+            disabled={planning.working}
+            onClick={() => void planning.markClean([piece.id])}
+          >
+            Mark clean
+          </button>
+        </div>
+      ) : (
+        piece.wears_before_wash !== null && (
+          <div className="wash-row">
+            <p className="hint">
+              {piece.wears_since_wash === 0
+                ? "Not worn since its last wash."
+                : `Worn ${piece.wears_since_wash} of ${piece.wears_before_wash} times since its last wash.`}
+            </p>
+            <button
+              type="button"
+              className="text-button is-strong"
+              disabled={planning.working}
+              onClick={() => void planning.sendToWash(piece.id)}
+            >
+              Send to the wash
+            </button>
+          </div>
+        )
       )}
 
       {!piece.reviewed && piece.label_status === "waiting" && (

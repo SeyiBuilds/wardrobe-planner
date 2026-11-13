@@ -16,6 +16,8 @@ export type Piece = {
   pattern: Pattern | null;
   wears_before_wash: number | null;
   wears_since_wash: number;
+  // Waiting in the laundry: out of rotation until marked clean.
+  in_wash: boolean;
   photo_path: string;
   label_status: "waiting" | "done" | "failed";
   reviewed: boolean;
@@ -26,7 +28,7 @@ export type Piece = {
 export type PieceChanges = Partial<
   Pick<
     Piece,
-    "type" | "name" | "colour_name" | "formality" | "occasions" | "pattern" | "wears_before_wash" | "reviewed" | "label_status"
+    "type" | "name" | "colour_name" | "formality" | "occasions" | "pattern" | "wears_before_wash" | "wears_since_wash" | "in_wash" | "reviewed" | "label_status"
   >
 >;
 

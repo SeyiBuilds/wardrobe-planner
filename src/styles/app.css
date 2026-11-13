@@ -343,6 +343,14 @@ input {
   gap: 16px;
   padding: 14px 0;
   border-top: 1px solid rgb(24 33 58 / 18%);
+  color: var(--indigo);
+  text-decoration: none;
+}
+
+.day-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .day-name {
@@ -356,6 +364,23 @@ input {
   margin-top: 4px;
   color: var(--slate);
   font-size: 0.9375rem;
+}
+
+.day-kind {
+  color: var(--slate);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* The day's main pieces, side by side. */
+.outfit-strip {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.outfit-strip .thumb {
+  width: 40px;
 }
 
 .day-today {
@@ -667,8 +692,202 @@ input {
   accent-color: var(--indigo);
 }
 
+/* Planner */
+
+.thumb {
+  display: block;
+  flex: none;
+  width: 48px;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: var(--cloth);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb.is-empty {
+  border: 1.5px dashed rgb(24 33 58 / 40%);
+  background: transparent;
+}
+
+.note .action-button {
+  margin-top: 10px;
+}
+
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 16px;
+  color: var(--indigo);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.button-row .primary-button {
+  flex: 1 1 200px;
+}
+
+.section-title {
+  padding: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.day-kind-field {
+  margin-top: 20px;
+}
+
+/* One day's outfit, two pieces to a row on a phone. */
+.outfit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 14px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outfit-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--indigo);
+  font: inherit;
+  text-align: left;
+}
+
+button.outfit-slot {
+  cursor: pointer;
+}
+
+.outfit-slot .thumb {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.outfit-slot[aria-expanded="true"] .thumb {
+  outline: 2px dashed var(--stitch-deep);
+  outline-offset: 3px;
+}
+
+.outfit-slot-label {
+  color: var(--slate);
+  font-size: 0.875rem;
+}
+
+.outfit-slot-name {
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.badge {
+  align-self: flex-start;
+  margin-top: 2px;
+  color: #9c2a1c;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.choices-panel {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--cloth);
+}
+
+.choice-list,
+.check-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.choice-row,
+.check-piece {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid rgb(24 33 58 / 12%);
+  background: none;
+  color: var(--indigo);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.choice-name {
+  font-weight: 600;
+}
+
+.choice-note {
+  color: var(--slate);
+  font-size: 0.875rem;
+}
+
+.choice-note.is-clash {
+  color: var(--stitch-deep);
+}
+
+.check-day {
+  min-width: 0;
+  margin: 24px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.check-piece input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--indigo);
+}
+
+.wash-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin-top: 12px;
+}
+
+.wash-row .hint {
+  margin: 0;
+}
+
 @media (min-width: 520px) {
   .pieces {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .outfit-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

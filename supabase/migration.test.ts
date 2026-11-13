@@ -1,54 +1,9 @@
 // @vitest-environment node
-import { PGlite } from "@electric-sql/pglite";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-const OWNER = "11111111-1111-4111-8111-111111111111";
-const STRANGER = "22222222-2222-4222-8222-222222222222";
-
-// A small stand-in for the parts of Supabase the migration relies on.
-const SUPABASE_STUB = `
-  create role anon nologin;
-  create role authenticated nologin;
-
-  create schema auth;
-  create table auth.users (id uuid primary key);
-  create function auth.uid() returns uuid language sql stable as $$
-    select nullif(current_setting('request.jwt.sub', true), '')::uuid
-  $$;
-  grant usage on schema auth to anon, authenticated;
-  grant execute on function auth.uid() to anon, authenticated;
-
-  create schema storage;
-  create table storage.buckets (
-    id text primary key, name text, public boolean,
-    file_size_limit bigint, allowed_mime_types text[]
-  );
-  create table storage.objects (
-    id uuid primary key default gen_random_uuid(), bucket_id text, name text
-  );
-  alter table storage.objects enable row level security;
-  create function storage.foldername(name text) returns text[] language sql immutable as $$
-    select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1]
-  $$;
-  grant usage on schema storage to anon, authenticated;
-  grant select, insert, delete on storage.objects to anon, authenticated;
-  grant execute on function storage.foldername(text) to anon, authenticated;
-
-  grant usage on schema public to anon, authenticated;
-  alter default privileges in schema public grant all on tables to anon, authenticated;
-`;
+import type { PGlite } from "@electric-sql/pglite";
+import { createTestDb, OWNER, STRANGER } from "./testDb";
 
 let db: PGlite;
-
-async function as(role: "anon" | "authenticated", userId: string, query: string, params: unknown[] = []) {
-  await db.exec(`reset role; select set_config('request.jwt.sub', '${userId}', false); set role ${role};`);
-  try {
-    return await db.query<Record<string, unknown>>(query, params);
-  } finally {
-    await db.exec("reset role;");
-  }
-}
+let as: Awaited<ReturnType<typeof createTestDb>>["as"];
 
 function addPiece(userId: string, path = `${userId}/photo.jpg`) {
   return as(
@@ -60,10 +15,7 @@ function addPiece(userId: string, path = `${userId}/photo.jpg`) {
 }
 
 beforeAll(async () => {
-  db = new PGlite();
-  await db.exec(SUPABASE_STUB);
-  await db.exec(`insert into auth.users (id) values ('${OWNER}'), ('${STRANGER}');`);
-  await db.exec(readFileSync(join(__dirname, "migrations", "0001_wardrobe.sql"), "utf8"));
+  ({ db, as } = await createTestDb(["0001_wardrobe.sql"]));
 }, 60_000);
 
 afterAll(async () => {

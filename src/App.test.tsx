@@ -16,7 +16,28 @@ function fakeClient(options: {
   });
   const signOut = vi.fn(async () => ({ error: null }));
 
+  // An empty wardrobe and week: every query answers with no rows.
+  const from = () => {
+    let single = false;
+    const builder: unknown = new Proxy(
+      {},
+      {
+        get(_target, prop: string) {
+          if (prop === "then") {
+            return (resolve: (value: unknown) => void) => resolve({ data: single ? null : [], error: null });
+          }
+          return () => {
+            if (prop === "maybeSingle") single = true;
+            return builder;
+          };
+        },
+      },
+    );
+    return builder;
+  };
+
   const client = {
+    from,
     auth: {
       getSession: vi.fn(async () => ({
         data: { session: options.session ?? null },
@@ -118,13 +139,25 @@ describe("when signed out", () => {
 });
 
 describe("when signed in", () => {
-  it("opens on this week with seven empty days", async () => {
+  it("opens on this week with seven days, none planned yet", async () => {
     const { client } = fakeClient({ session: signedIn });
     render(<App client={client} />);
 
     expect(await screen.findByRole("heading", { name: "This week" })).toBeInTheDocument();
+    // Days already gone say "Not planned", the rest "Not planned yet".
+    expect(await screen.findAllByText(/^Not planned/)).toHaveLength(7);
     expect(screen.getAllByRole("listitem")).toHaveLength(7);
-    expect(screen.getAllByRole("img", { name: "No outfit planned" })).toHaveLength(7);
+  });
+
+  it("opens a day's page from the week", async () => {
+    const user = userEvent.setup();
+    const { client } = fakeClient({ session: signedIn });
+    render(<App client={client} />);
+
+    await user.click((await screen.findAllByRole("link", { name: /Monday/ }))[0]);
+
+    expect(window.location.pathname).toMatch(/^\/day\/\d{4}-\d{2}-\d{2}$/);
+    expect(screen.getByRole("heading", { name: "Monday" })).toBeInTheDocument();
   });
 
   it("marks today", async () => {
