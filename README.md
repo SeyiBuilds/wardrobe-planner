@@ -50,7 +50,8 @@ Without the Supabase values, the app shows a screen explaining what's missing. W
 3. Under **Authentication > Users**, add your user with **Auto Confirm User** ticked.
 4. Open the **SQL Editor**, paste in `supabase/migrations/0001_wardrobe.sql` and run it. This creates the wardrobe table, the private photo bucket and the rules that keep both private to you.
 5. Then paste in `supabase/migrations/0002_planner.sql` and run it too. This adds your usual week, planned outfits and laundry, with the same privacy rules.
-6. Copy the project URL and the publishable key into `.env.local` and into Vercel's environment variables, as Config values.
+6. Then paste in `supabase/migrations/0003_style.sql` and run it too. This adds the readings of your inspiration pictures and your style settings, with the same privacy rules. Pictures are deleted once they have been read.
+7. Copy the project URL and the publishable key into `.env.local` and into Vercel's environment variables, as Config values.
 
 Only ever use the publishable key or the legacy anon key. These values ship to the browser, so the build stops if it finds a secret key.
 
