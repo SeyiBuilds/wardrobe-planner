@@ -7,6 +7,9 @@ import { PieceScreen } from "./PieceScreen";
 import { WardrobeScreen } from "./WardrobeScreen";
 
 vi.mock("../lib/wardrobe", () => ({ useWardrobe: vi.fn() }));
+vi.mock("../lib/planning", () => ({
+  usePlanning: () => ({ working: false, markClean: vi.fn(), sendToWash: vi.fn() }),
+}));
 
 function piece(overrides: Partial<Piece>): Piece {
   return {
