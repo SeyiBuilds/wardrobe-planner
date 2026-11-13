@@ -1,5 +1,6 @@
 // @vitest-environment node
 import type { InspirationResult } from "./groq";
+import type { InspirationReading } from "./inspiration";
 import { handleInspirationRequest } from "./readInspiration";
 
 const SUPABASE = "https://test-project.supabase.co";
@@ -12,11 +13,11 @@ const env = {
 
 const waiting = { id: ID, status: "waiting", photo_path: "user-1/inspiration/a.jpg", pieces: [] };
 
-const reading = {
+const reading: InspirationReading = {
   kindOfDay: "church",
   formality: "formal",
   pieces: [{ kind: "suit", colour: "navy", patterned: false }],
-} as const;
+};
 
 // A stand-in for Supabase's sign-in, database and storage endpoints.
 function fakeSupabase(options: { row?: Record<string, unknown> | null; signedIn?: boolean } = {}) {
