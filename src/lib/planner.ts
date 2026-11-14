@@ -416,7 +416,7 @@ function finish(ctx: Context, base: Outfit, baseScore: number, day: string, dayT
   return { slots, notes, score: score - repeat.cost };
 }
 
-function baseScore(ctx: Context, outfit: Outfit, day: string, dayType: DayType, avoid: Slots | undefined): number {
+function baseScore(ctx: Context, outfit: Outfit, day: string, dayType: DayType, avoid: Slots[]): number {
   const parts = piecesOf(outfit);
   let score = 0;
 
@@ -430,16 +430,16 @@ function baseScore(ctx: Context, outfit: Outfit, day: string, dayType: DayType, 
   const freshness = parts.reduce((sum, p) => sum + ctx.ledger.freshness(p.piece.id, day), 0) / parts.length;
   score += freshness * 12;
 
-  if (avoid) {
+  if (avoid.length > 0) {
     const slots = idsOf(outfit);
-    if ((["top", "trousers", "suit", "native_set"] as const).every((slot) => slots[slot] === avoid[slot])) score -= AVOID;
+    if (avoid.some((old) => sameBase(slots, old))) score -= AVOID;
   }
 
   score += styleScore(ctx, outfit, dayType).score;
   return score + ctx.random() * NOISE;
 }
 
-function planDay(ctx: Context, day: string, dayType: DayType, avoid: Slots | undefined): DayResult {
+function planDay(ctx: Context, day: string, dayType: DayType, avoid: Slots[]): DayResult {
   if (dayType === "none") return { slots: {}, notes: [], score: 0 };
 
   const tops = freeFor(ctx, "top", day, dayType);
@@ -495,6 +495,11 @@ function planDay(ctx: Context, day: string, dayType: DayType, avoid: Slots | und
   return { ...result, notes: [...notes, ...result.notes] };
 }
 
+// Two outfits are the same look when their main pieces match; shoes and extras don't count.
+export function sameBase(a: Slots, b: Slots): boolean {
+  return (["top", "trousers", "suit", "native_set"] as const).every((slot) => a[slot] === b[slot]);
+}
+
 function shuffle<T>(list: T[], random: () => number): T[] {
   for (let i = list.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
@@ -516,7 +521,8 @@ export function planDays({
   pieces: PlannerPiece[];
   outfits: KnownOutfit[];
   random?: () => number;
-  avoid?: Record<string, Slots>;
+  // Outfits to steer away from on a day: the one being replaced, or every one already seen.
+  avoid?: Record<string, Slots | Slots[]>;
   style?: StyleInput;
 }): DayPlan[] {
   const planning = new Set(days.map((d) => d.day));
@@ -530,7 +536,7 @@ export function planDays({
     const results = new Map<string, DayResult>();
     let total = 0;
     for (const { day, dayType } of order) {
-      const result = planDay(ctx, day, dayType, avoid[day]);
+      const result = planDay(ctx, day, dayType, [avoid[day] ?? []].flat());
       ctx.ledger.assign(day, result.slots);
       results.set(day, result);
       total += result.score;
