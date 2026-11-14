@@ -106,7 +106,9 @@ export function WeekScreen() {
                     {isToday && <span className="day-today"> · Today</span>}
                   </span>
                   <span className="day-kind">
-                    {outfit ? dayTypeLabel(outfit.day_type) : day < status.window.today ? "Not planned" : "Not planned yet"}
+                    {outfit
+                      ? `${dayTypeLabel(outfit.day_type)}${outfit.checked_at && outfit.worn?.length ? " · Worn" : ""}`
+                      : day < status.window.today ? "Not planned" : "Not planned yet"}
                   </span>
                 </span>
                 <OutfitStrip outfit={outfit} pieces={pieces} links={wardrobe.links} />

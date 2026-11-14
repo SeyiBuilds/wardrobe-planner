@@ -1,22 +1,89 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { useRef, useState, type ReactNode, type TouchEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 import { SLOT_LABELS, slotsToShow, Thumb } from "../components/OutfitParts";
+import { fingerSwipe, type Touch } from "../lib/gestures";
+import { useGestures, useHandControl } from "../lib/handControl";
 import { usePlanning } from "../lib/planning";
 import { DAY_TYPES, type DayType, type Slot } from "../lib/planner";
 import { slotsOf } from "../lib/plans";
 import { useWardrobe } from "../lib/wardrobe";
-import { dayName, parseDay, shortDate } from "../lib/week";
+import { addDays, dayName, parseDay, shortDate } from "../lib/week";
+
+type Direction = "next" | "previous";
 
 export function DayScreen() {
   const { day = "" } = useParams();
   const planning = usePlanning();
   const wardrobe = useWardrobe();
+  const hands = useHandControl();
+  const navigate = useNavigate();
   const [choosing, setChoosing] = useState<Slot | null>(null);
+  const touchStart = useRef<Touch | null>(null);
 
   const date = parseDay(day);
   const isToday = planning.status?.window.today === day;
-  const header = (
-    <>
+  const outfit = planning.outfits?.find((o) => o.day === day);
+  const locked = outfit ? outfit.checked_at !== null : false;
+  const dressed = outfit !== undefined && outfit.day_type !== "none" && Object.keys(slotsOf(outfit)).length > 0;
+  const pending = planning.pendingWorn === day;
+  const canMarkWorn = isToday && dressed && !locked && !pending;
+
+  // Moves a day along, staying within the week on show.
+  function goTo(direction: Direction): string {
+    const week = planning.status?.shownDays ?? [];
+    const target = addDays(day, direction === "next" ? 1 : -1);
+    if (week.includes(day) && !week.includes(target)) {
+      return direction === "next" ? "That's the last day of the week" : "That's the first day of the week";
+    }
+    setChoosing(null);
+    navigate(`/day/${target}`);
+    return direction === "next" ? "Next day" : "Day before";
+  }
+
+  useGestures((gesture) => {
+    switch (gesture) {
+      case "next":
+      case "previous":
+        return goTo(gesture);
+      case "another":
+        if (!outfit) return "This day hasn't been planned yet";
+        if (locked) return "This day is done, so it can't change";
+        if (outfit.day_type === "none") return "No outfit planned for this day";
+        if (planning.working) return null;
+        void planning.anotherOutfit(day);
+        return "Another outfit";
+      case "back":
+        if (locked) return "This day is done, so it can't change";
+        if (!planning.canGoBack(day)) return "No earlier outfit to go back to";
+        if (planning.working) return null;
+        void planning.previousOutfit(day);
+        return "Back to the one before";
+      case "thumbsUp":
+        if (!isToday) return "Thumbs up works on today's outfit";
+        if (pending) return "Already marked as worn";
+        if (locked) return "Today is already counted as worn";
+        if (!canMarkWorn) return "There's no outfit to mark as worn";
+        planning.markWorn(day);
+        return "Marked as worn";
+    }
+  });
+
+  function onTouchStart(event: TouchEvent) {
+    const touch = event.changedTouches[0];
+    touchStart.current = touch ? { x: touch.clientX, y: touch.clientY, time: event.timeStamp } : null;
+  }
+
+  function onTouchEnd(event: TouchEvent) {
+    const start = touchStart.current;
+    const touch = event.changedTouches[0];
+    touchStart.current = null;
+    if (!start || !touch) return;
+    const swipe = fingerSwipe(start, { x: touch.clientX, y: touch.clientY, time: event.timeStamp });
+    if (swipe) goTo(swipe);
+  }
+
+  const page = (content: ReactNode) => (
+    <div className="day-page" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <Link to="/" className="back-link">
         ← Week
       </Link>
@@ -25,19 +92,21 @@ export function DayScreen() {
         {shortDate(date)}
         {isToday && " · Today"}
       </p>
-    </>
+      {hands.status === "off" && (
+        <div className="hand-row">
+          <button type="button" className="action-button is-quiet" onClick={hands.start}>
+            Use hand control
+          </button>
+          <span className="hint">Or swipe left and right to change day.</span>
+        </div>
+      )}
+      {hands.problem && <p className="note">{hands.problem}</p>}
+      {content}
+    </div>
   );
 
-  if (!planning.outfits) {
-    return (
-      <>
-        {header}
-        <p className="screen-note">Loading…</p>
-      </>
-    );
-  }
+  if (!planning.outfits) return page(<p className="screen-note">Loading…</p>);
 
-  const outfit = planning.outfits.find((o) => o.day === day);
   const error = planning.error && (
     <p className="note is-alert" role="alert">
       {planning.error}
@@ -45,9 +114,8 @@ export function DayScreen() {
   );
 
   if (!outfit) {
-    return (
+    return page(
       <>
-        {header}
         <p className="placeholder-body">This day hasn't been planned yet.</p>
         <div className="button-row">
           <button type="button" className="action-button" disabled={planning.working} onClick={() => void planning.replanDay(day)}>
@@ -55,24 +123,21 @@ export function DayScreen() {
           </button>
         </div>
         {error}
-      </>
+      </>,
     );
   }
 
   const pieces = new Map((wardrobe.pieces ?? []).map((piece) => [piece.id, piece]));
   const slots = slotsOf(outfit);
-  const locked = outfit.checked_at !== null;
 
   async function choose(slot: Slot, id: string | null) {
     if (await planning.swap(day, slot, id)) setChoosing(null);
   }
 
-  return (
+  return page(
     <>
-      {header}
-
       {locked ? (
-        <p className="screen-note">This day has been through the weekly check, so it can't be changed.</p>
+        <p className="screen-note">This day is done: what you wore has been counted, so it can't be changed.</p>
       ) : (
         <label className="form-field day-kind-field">
           <span className="form-label">Kind of day</span>
@@ -88,6 +153,15 @@ export function DayScreen() {
             ))}
           </select>
         </label>
+      )}
+
+      {pending && (
+        <div className="note" role="status">
+          <p>Marked as worn. It's counted in a few seconds.</p>
+          <button type="button" className="text-button is-strong" onClick={planning.undoWorn}>
+            Undo
+          </button>
+        </div>
       )}
 
       {outfit.notes
@@ -160,14 +234,37 @@ export function DayScreen() {
         </section>
       )}
 
-      {!locked && outfit.day_type !== "none" && (
+      {canMarkWorn && (
         <div className="button-row">
-          <button type="button" className="action-button is-quiet" disabled={planning.working} onClick={() => void planning.replanDay(day)}>
-            {planning.working ? "Planning…" : "Plan this day again"}
+          <button type="button" className="action-button" disabled={planning.working} onClick={() => planning.markWorn(day)}>
+            I wore this
           </button>
         </div>
       )}
-    </>
+
+      {!locked && outfit.day_type !== "none" && (
+        <div className="button-row">
+          {planning.canGoBack(day) && (
+            <button
+              type="button"
+              className="action-button is-quiet"
+              disabled={planning.working}
+              onClick={() => void planning.previousOutfit(day)}
+            >
+              Back
+            </button>
+          )}
+          <button
+            type="button"
+            className="action-button is-quiet"
+            disabled={planning.working}
+            onClick={() => void planning.anotherOutfit(day)}
+          >
+            {planning.working ? "Planning…" : "Another outfit"}
+          </button>
+        </div>
+      )}
+    </>,
   );
 }
 

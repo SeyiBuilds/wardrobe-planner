@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { AppShell } from "./components/AppShell";
+import { HandControlProvider } from "./lib/handControl";
 import { PlanningProvider } from "./lib/planning";
 import { StyleProvider } from "./lib/style";
 import { useSession } from "./lib/useSession";
@@ -37,19 +38,21 @@ function AuthGate({ client }: { client: SupabaseClient }) {
       <StyleProvider client={client}>
         <PlanningProvider client={client}>
           <BrowserRouter>
-            <Routes>
-              <Route element={<AppShell onSignOut={() => client.auth.signOut()} />}>
-                <Route index element={<WeekScreen />} />
-                <Route path="day/:day" element={<DayScreen />} />
-                <Route path="week/usual" element={<UsualWeekScreen />} />
-                <Route path="check" element={<CheckScreen />} />
-                <Route path="wardrobe" element={<WardrobeScreen />} />
-                <Route path="wardrobe/:pieceId" element={<PieceScreen />} />
-                <Route path="style" element={<StyleScreen />} />
-                <Route path="laundry" element={<LaundryScreen />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
+            <HandControlProvider>
+              <Routes>
+                <Route element={<AppShell onSignOut={() => client.auth.signOut()} />}>
+                  <Route index element={<WeekScreen />} />
+                  <Route path="day/:day" element={<DayScreen />} />
+                  <Route path="week/usual" element={<UsualWeekScreen />} />
+                  <Route path="check" element={<CheckScreen />} />
+                  <Route path="wardrobe" element={<WardrobeScreen />} />
+                  <Route path="wardrobe/:pieceId" element={<PieceScreen />} />
+                  <Route path="style" element={<StyleScreen />} />
+                  <Route path="laundry" element={<LaundryScreen />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </HandControlProvider>
           </BrowserRouter>
         </PlanningProvider>
       </StyleProvider>

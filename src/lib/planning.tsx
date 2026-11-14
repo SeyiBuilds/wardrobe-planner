@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listPieces, WardrobeError, type Piece } from "./pieces";
-import { planDays, swapChoices, type DayType, type Slot, type Slots } from "./planner";
+import { planDays, sameBase, SLOTS, swapChoices, type DayType, type Note, type Slot, type Slots } from "./planner";
 import {
   afterSwap,
   currentUserId,
@@ -11,6 +11,7 @@ import {
   knownOutfits,
   listOutfits,
   loadUsualWeek,
+  outfitChanges,
   rowFromPlan,
   saveOutfits,
   saveUsualWeek as storeUsualWeek,
@@ -27,6 +28,12 @@ import { addDays, dayKey, weekOf } from "./week";
 // Five weeks of history is enough for the planner to avoid recent repeats.
 const HISTORY_DAYS = 35;
 
+// The outfits you've flicked through for one day, and which one is showing.
+type Seen = { slots: Slots; notes: Note[] };
+type Trail = { list: Seen[]; at: number };
+
+const sameSlots = (a: Slots, b: Slots) => SLOTS.every((slot) => a[slot] === b[slot]);
+
 type Planning = {
   outfits: Outfit[] | null;
   usualWeek: DayType[];
@@ -39,6 +46,14 @@ type Planning = {
   // Each action resolves to true when it worked; otherwise `error` says why.
   planMissing: () => Promise<boolean>;
   replanDay: (day: string) => Promise<boolean>;
+  // Flicking through other outfits for a day: forward makes a new one once you've seen them all.
+  anotherOutfit: (day: string) => Promise<boolean>;
+  previousOutfit: (day: string) => Promise<boolean>;
+  canGoBack: (day: string) => boolean;
+  // Marking a day worn waits a few seconds, so a misread thumbs up can be undone.
+  pendingWorn: string | null;
+  markWorn: (day: string) => void;
+  undoWorn: () => void;
   setDayType: (day: string, dayType: DayType) => Promise<boolean>;
   swap: (day: string, slot: Slot, pieceId: string | null) => Promise<boolean>;
   choicesFor: (day: string, slot: Slot) => { piece: Piece; clash: string | null }[];
@@ -59,11 +74,13 @@ export function PlanningProvider({
   client,
   now = () => new Date(),
   random = Math.random,
+  undoTime = 5000,
   children,
 }: {
   client: SupabaseClient;
   now?: () => Date;
   random?: () => number;
+  undoTime?: number;
   children: ReactNode;
 }) {
   const wardrobe = useWardrobe();
@@ -73,6 +90,12 @@ export function PlanningProvider({
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0);
+  const [trailTick, setTrailTick] = useState(0);
+  const [pendingWorn, setPendingWorn] = useState<string | null>(null);
+  const trails = useRef(new Map<string, Trail>());
+  const pendingRef = useRef<string | null>(null);
+  const wornTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const commitWornRef = useRef<() => Promise<void>>(async () => {});
 
   // Actions read the latest values through refs, so a slow save never works from stale ones.
   const outfitsRef = useRef<Outfit[]>([]);
@@ -127,11 +150,14 @@ export function PlanningProvider({
     const timer = setInterval(tick, 60_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") tick();
+      // Leaving the app saves a day marked worn straight away rather than risk losing it.
+      else void commitWornRef.current();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      void commitWornRef.current();
     };
   }, []);
 
@@ -196,6 +222,115 @@ export function PlanningProvider({
       }),
     [replan, run],
   );
+
+  // A day you can still change, or a reason why not.
+  const editableOutfit = useCallback((day: string): Outfit => {
+    const outfit = outfitsRef.current.find((o) => o.day === day);
+    if (!outfit) throw new WardrobeError("That day hasn't been planned yet.");
+    if (outfit.checked_at) throw new WardrobeError("This day is done, so it can't be changed.");
+    return outfit;
+  }, []);
+
+  // The trail for a day, as long as it's still showing what the day has. Changing a piece
+  // yourself starts a new trail from what you chose.
+  const trailFor = useCallback((outfit: Outfit): Trail => {
+    const slots = slotsOf(outfit);
+    const trail = trails.current.get(outfit.day);
+    if (trail && sameSlots(trail.list[trail.at].slots, slots)) return trail;
+    return { list: [{ slots, notes: outfit.notes }], at: 0 };
+  }, []);
+
+  const showFromTrail = useCallback(
+    async (outfit: Outfit, trail: Trail, at: number) => {
+      const next = trail.list[at];
+      merge([await updateOutfit(client, outfit.id, outfitChanges(next.slots, next.notes))]);
+      trail.at = at;
+      trails.current.set(outfit.day, trail);
+      setTrailTick((value) => value + 1);
+    },
+    [client, merge],
+  );
+
+  const anotherOutfit = useCallback(
+    (day: string) =>
+      run(async () => {
+        const outfit = editableOutfit(day);
+        const trail = trailFor(outfit);
+        if (trail.at === trail.list.length - 1) {
+          const [plan] = planDays({
+            days: [{ day, dayType: outfit.day_type }],
+            pieces: requirePieces(),
+            outfits: knownOutfits(outfitsRef.current, day),
+            random: randomRef.current,
+            avoid: { [day]: trail.list.map((seen) => seen.slots) },
+            style: styleRef.current,
+          });
+          if (trail.list.some((seen) => sameBase(seen.slots, plan.slots))) {
+            throw new WardrobeError(
+              "There's no other outfit that works for this day right now. More clean clothes give the planner more to choose from.",
+            );
+          }
+          trail.list.push({ slots: plan.slots, notes: plan.notes });
+        }
+        await showFromTrail(outfit, trail, trail.at + 1);
+      }),
+    [editableOutfit, requirePieces, run, showFromTrail, trailFor],
+  );
+
+  const previousOutfit = useCallback(
+    (day: string) =>
+      run(async () => {
+        const outfit = editableOutfit(day);
+        const trail = trailFor(outfit);
+        if (trail.at === 0) throw new WardrobeError("There's no earlier outfit to go back to.");
+        await showFromTrail(outfit, trail, trail.at - 1);
+      }),
+    [editableOutfit, run, showFromTrail, trailFor],
+  );
+
+  const canGoBack = useCallback(
+    (day: string) => {
+      const outfit = outfitsRef.current.find((o) => o.day === day);
+      if (!outfit || outfit.checked_at) return false;
+      return trailFor(outfit).at > 0;
+    },
+    // Recomputed when outfits or the trails change.
+    [outfits, trailTick, trailFor],
+  );
+
+  // Saves a day marked worn: every piece in it counts as worn, like the weekly check.
+  const commitWorn = useCallback(async () => {
+    const day = pendingRef.current;
+    clearTimeout(wornTimer.current);
+    if (!day) return;
+    pendingRef.current = null;
+    setPendingWorn(null);
+    await run(async () => {
+      const outfit = outfitsRef.current.find((o) => o.day === day);
+      if (!outfit || outfit.checked_at) return;
+      await saveCheck(client, { [outfit.id]: Object.values(slotsOf(outfit)) }, []);
+      replaceAll(await listOutfits(client, historyStart()));
+      wardrobe.reload();
+    });
+  }, [client, historyStart, replaceAll, run, wardrobe]);
+  commitWornRef.current = commitWorn;
+
+  const markWorn = useCallback(
+    (day: string) => {
+      if (pendingRef.current && pendingRef.current !== day) void commitWornRef.current();
+      clearTimeout(wornTimer.current);
+      pendingRef.current = day;
+      setPendingWorn(day);
+      wornTimer.current = setTimeout(() => void commitWornRef.current(), undoTime);
+    },
+    [undoTime],
+  );
+
+  const undoWorn = useCallback(() => {
+    clearTimeout(wornTimer.current);
+    pendingRef.current = null;
+    setPendingWorn(null);
+  }, []);
 
   const setDayType = useCallback(
     (day: string, dayType: DayType) => run(() => replan(day, dayType)),
@@ -287,6 +422,12 @@ export function PlanningProvider({
       reload: () => void load(),
       planMissing,
       replanDay,
+      anotherOutfit,
+      previousOutfit,
+      canGoBack,
+      pendingWorn,
+      markWorn,
+      undoWorn,
       setDayType,
       swap,
       choicesFor,
@@ -296,7 +437,7 @@ export function PlanningProvider({
       sendToWash,
     }),
     // `status` follows outfits, the usual week and the clock tick.
-    [outfits, usualWeek, status?.window.today, status?.window.sundayEvening, loadError, working, error, load, planMissing, replanDay, setDayType, swap, choicesFor, saveUsualWeek, finishCheck, markClean, sendToWash],
+    [outfits, usualWeek, status?.window.today, status?.window.sundayEvening, loadError, working, error, load, planMissing, replanDay, anotherOutfit, previousOutfit, canGoBack, pendingWorn, markWorn, undoWorn, setDayType, swap, choicesFor, saveUsualWeek, finishCheck, markClean, sendToWash],
   );
 
   return <PlanningContext.Provider value={value}>{children}</PlanningContext.Provider>;

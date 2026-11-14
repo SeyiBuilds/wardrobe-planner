@@ -39,10 +39,14 @@ export function slotsOf(outfit: Outfit): Slots {
 }
 
 export function rowFromPlan(plan: DayPlan, userId: string) {
-  const row: Record<string, unknown> = { user_id: userId, day: plan.day, day_type: plan.dayType };
-  for (const slot of SLOTS) row[column(slot)] = plan.slots[slot] ?? null;
-  row.notes = plan.notes;
-  return row;
+  return { user_id: userId, day: plan.day, day_type: plan.dayType, ...outfitChanges(plan.slots, plan.notes) };
+}
+
+// Every piece column and the notes, for putting a whole outfit on a day that's already saved.
+export function outfitChanges(slots: Slots, notes: Note[]): Record<string, unknown> {
+  const changes: Record<string, unknown> = { notes };
+  for (const slot of SLOTS) changes[column(slot)] = slots[slot] ?? null;
+  return changes;
 }
 
 // What the planner needs to know about saved days: checked days count only what was really worn.
