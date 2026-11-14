@@ -46,6 +46,7 @@ function wardrobe(overrides: Partial<ReturnType<typeof useWardrobe>> = {}) {
     addPhotos: vi.fn(async () => {}),
     save: vi.fn(async () => piece({})),
     remove: vi.fn(async () => {}),
+    setMatch: vi.fn(async () => {}),
     readAgain: vi.fn(async () => {}),
     resumeReading: vi.fn(),
     reload: vi.fn(),
@@ -201,6 +202,66 @@ describe("Wardrobe screen", () => {
 });
 
 describe("Piece screen", () => {
+  const NATIVE_TOP = piece({ id: "p1", name: "Green native top" });
+  const NATIVE_TROUSERS = piece({ id: "t1", type: "trousers", name: "Green native trousers", photo_path: "u1/t1.jpg" });
+  const JEANS = piece({ id: "t2", type: "trousers", name: "Light jeans", photo_path: "u1/t2.jpg" });
+  const LOAFERS = piece({ id: "s1", type: "shoes", name: "Black loafers", photo_path: "u1/s1.jpg" });
+
+  it("matches a top with its own trousers", async () => {
+    const user = userEvent.setup();
+    const value = wardrobe({ pieces: [NATIVE_TOP, NATIVE_TROUSERS, JEANS, LOAFERS] });
+    renderAt("/wardrobe/p1");
+
+    const match = screen.getByLabelText("Matching piece");
+    expect(Array.from((match as HTMLSelectElement).options).map((o) => o.text)).toEqual([
+      "None",
+      "Green native trousers",
+      "Light jeans",
+    ]);
+    await user.selectOptions(match, "Green native trousers");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(value.save).toHaveBeenCalled();
+    expect(value.setMatch).toHaveBeenCalledWith("p1", "t1");
+  });
+
+  it("shows a match already made, and can undo it", async () => {
+    const user = userEvent.setup();
+    const value = wardrobe({
+      pieces: [{ ...NATIVE_TOP, match_id: "t1" }, { ...NATIVE_TROUSERS, match_id: "p1" }, JEANS],
+    });
+    renderAt("/wardrobe/t1");
+
+    expect(screen.getByLabelText("Matching piece")).toHaveDisplayValue("Green native top");
+    await user.selectOptions(screen.getByLabelText("Matching piece"), "None");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(value.setMatch).toHaveBeenCalledWith("t1", null);
+  });
+
+  it("leaves the match alone when it hasn't changed", async () => {
+    const user = userEvent.setup();
+    const value = wardrobe({ pieces: [{ ...NATIVE_TOP, match_id: "t1" }, { ...NATIVE_TROUSERS, match_id: "p1" }] });
+    renderAt("/wardrobe/p1");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(value.save).toHaveBeenCalled();
+    expect(value.setMatch).not.toHaveBeenCalled();
+  });
+
+  it("only offers a matching piece for tops and trousers, and drops the match if the type changes", async () => {
+    const user = userEvent.setup();
+    const value = wardrobe({ pieces: [{ ...NATIVE_TOP, match_id: "t1" }, { ...NATIVE_TROUSERS, match_id: "p1" }, LOAFERS] });
+    renderAt("/wardrobe/p1");
+
+    await user.selectOptions(screen.getByLabelText("Type"), "native_set");
+    expect(screen.queryByLabelText("Matching piece")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(value.setMatch).toHaveBeenCalledWith("p1", null);
+  });
+
   it("saves your corrections and marks the piece as checked", async () => {
     const user = userEvent.setup();
     const value = wardrobe({ pieces: [piece({ reviewed: false })] });

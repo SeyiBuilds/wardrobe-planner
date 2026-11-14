@@ -18,6 +18,8 @@ export type Piece = {
   wears_since_wash: number;
   // Waiting in the laundry: out of rotation until marked clean.
   in_wash: boolean;
+  // The other half of a matching set, such as a native top's own trousers. Always planned together.
+  match_id?: string | null;
   photo_path: string;
   label_status: "waiting" | "done" | "failed";
   reviewed: boolean;
@@ -71,6 +73,24 @@ export async function savePiece(client: SupabaseClient, id: string, changes: Pie
   const { data, error } = await client.from("pieces").update(changes).eq("id", id).select("*").single();
   if (error || !data) throw new WardrobeError(`Your changes couldn't be saved. ${CONNECTION}`);
   return data as Piece;
+}
+
+// Matches a piece with its partner, or unmatches it when `partner` is null. Both halves change
+// together, and anything either was matched with before is freed.
+export async function matchPieces(client: SupabaseClient, piece: string, partner: string | null): Promise<void> {
+  const { error } = await client.rpc("set_match", { piece, partner });
+  if (error) throw new WardrobeError(`The matching piece couldn't be saved. ${CONNECTION}`);
+}
+
+// The same change as matchPieces, made to a list already loaded, so nothing needs fetching again.
+export function afterMatch(pieces: Piece[], piece: string, partner: string | null): Piece[] {
+  const touched = new Set([piece, partner]);
+  return pieces.map((p) => {
+    if (p.id === piece) return { ...p, match_id: partner };
+    if (partner && p.id === partner) return { ...p, match_id: piece };
+    if (p.match_id && touched.has(p.match_id)) return { ...p, match_id: null };
+    return p;
+  });
 }
 
 export async function removePiece(client: SupabaseClient, piece: Piece): Promise<void> {

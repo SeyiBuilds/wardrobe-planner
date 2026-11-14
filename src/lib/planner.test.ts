@@ -453,6 +453,97 @@ function breaksARule(plans: DayPlan[], pieces: PlannerPiece[], dayTypes: Record<
   return null;
 }
 
+describe("matching sets", () => {
+  const DARK_GREEN = "#1d5a3a";
+  const LIGHT_JEANS = "#b4c3d3";
+
+  function withSet(fields: Partial<PlannerPiece> = {}) {
+    return [
+      ...basicWardrobe(),
+      piece("trousers", LIGHT_JEANS, { id: "jeans" }),
+      piece("top", DARK_GREEN, { id: "native-top", match_id: "native-trousers", ...fields }),
+      piece("trousers", DARK_GREEN, { id: "native-trousers", match_id: "native-top", ...fields }),
+    ];
+  }
+
+  it("always plans the two halves together, and never with anything else", () => {
+    const days = week(["casual", "casual", "casual", "casual", "casual", "casual", "casual"]);
+    let setDays = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      for (const day of plan(days, withSet(), [], seed)) {
+        const top = day.slots.top === "native-top";
+        const trousers = day.slots.trousers === "native-trousers";
+        expect(top).toBe(trousers);
+        if (top) setDays++;
+      }
+    }
+    // The set is all one colour, which would break the top-stands-out rule for separates.
+    expect(setDays).toBeGreaterThan(0);
+  });
+
+  it("plans a set even when it's patterned and bold", () => {
+    const pieces = [
+      piece("top", RED, { id: "ankara-top", match_id: "ankara-trousers", pattern: "patterned", colours: [{ hex: RED, share: 0.6 }, { hex: GREEN, share: 0.4 }] }),
+      piece("trousers", RED, { id: "ankara-trousers", match_id: "ankara-top", pattern: "patterned", colours: [{ hex: RED, share: 0.6 }, { hex: GREEN, share: 0.4 }] }),
+      piece("shoes", BLACK),
+    ];
+
+    const [day] = plan(week(["casual"]), pieces);
+
+    expect(day.slots.top).toBe("ankara-top");
+    expect(day.slots.trousers).toBe("ankara-trousers");
+  });
+
+  it("leaves both halves out when one of them is in the wash", () => {
+    const pieces = withSet().map((p) => (p.id === "native-trousers" ? { ...p, in_wash: true } : p));
+
+    for (const seed of [1, 2, 3]) {
+      const plans = plan(week(["casual", "casual", "casual", "casual", "casual"]), pieces, [], seed);
+      expect(used(plans, "native-top")).toEqual([]);
+    }
+  });
+
+  it("leaves a set out on days only one half is marked Good for", () => {
+    // Without the set rule, the native top and the jeans would be the only outfit.
+    const pieces = [
+      piece("top", DARK_GREEN, { id: "native-top", match_id: "native-trousers" }),
+      piece("trousers", DARK_GREEN, { id: "native-trousers", match_id: "native-top", occasions: ["native"] }),
+      piece("trousers", LIGHT_JEANS, { id: "jeans" }),
+      piece("shoes", BLACK),
+    ];
+
+    const [day] = plan(week(["casual"]), pieces);
+
+    expect(day.slots.top).toBeUndefined();
+  });
+
+  it("treats a one-sided match as no match", () => {
+    const pieces = [
+      piece("top", WHITE, { id: "shirt", match_id: "chinos" }),
+      piece("trousers", NAVY, { id: "chinos" }),
+      piece("trousers", BLACK, { id: "black" }),
+      piece("shoes", BLACK),
+    ];
+
+    const tops = [1, 2, 3, 4, 5, 6].map((seed) => plan(week(["casual"]), pieces, [], seed)[0].slots.trousers);
+
+    expect(tops).toContain("black");
+  });
+
+  it("warns before a swap breaks up a set", () => {
+    const pieces = withSet();
+    const inSet = { top: "native-top", trousers: "native-trousers", shoes: pieces[11].id };
+    const separates = { top: pieces[0].id, trousers: pieces[7].id, shoes: pieces[11].id };
+
+    const trousers = swapChoices({ day: MONDAY, dayType: "casual", slots: inSet, slot: "trousers", pieces, outfits: [] });
+    const tops = swapChoices({ day: MONDAY, dayType: "casual", slots: separates, slot: "top", pieces, outfits: [] });
+
+    expect(trousers.find((c) => c.id === "native-trousers")!.clash).toBeNull();
+    expect(trousers.find((c) => c.id === "jeans")!.clash).toBe("Breaks up a matching set");
+    expect(tops.find((c) => c.id === "native-top")!.clash).toBe("Part of a matching set");
+  });
+});
+
 describe("planDays under stress", () => {
   const HEXES = [NAVY, WHITE, GREY, BLACK, BROWN, TAN, LIGHT_BLUE, OLIVE, RED, GREEN, WINE];
   const FORMALITY = ["relaxed", "smart", "formal"] as const;

@@ -23,7 +23,12 @@ type Draft = {
   occasions: Occasion[];
   pattern: Pattern | null;
   wears: number | null;
+  // The other half of a matching set, such as a native top's own trousers.
+  match: string | null;
 };
+
+// A top can be matched with trousers, and trousers with a top.
+const MATCHES_WITH: Partial<Record<PieceType, PieceType>> = { top: "trousers", trousers: "top" };
 
 const WEAR_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10];
 
@@ -36,6 +41,7 @@ function draftFrom(piece: Piece): Draft {
     occasions: piece.occasions,
     pattern: piece.pattern,
     wears: piece.wears_before_wash,
+    match: piece.match_id ?? null,
   };
 }
 
@@ -69,6 +75,12 @@ export function PieceScreen() {
     );
   }
 
+  const photo = wardrobe.links[piece.photo_path];
+  const matchType = MATCHES_WITH[draft.type];
+  const candidates = matchType ? wardrobe.pieces.filter((p) => p.type === matchType) : [];
+  // The match only counts if it's still the right kind of piece for the type chosen.
+  const match = candidates.some((p) => p.id === draft.match) ? draft.match : null;
+
   function change(next: Partial<Draft>) {
     setTouched(true);
     setDraft((current) => (current ? { ...current, ...next } : current));
@@ -100,6 +112,7 @@ export function PieceScreen() {
         wears_before_wash: draft!.wears,
         reviewed: true,
       });
+      if (match !== (piece!.match_id ?? null)) await wardrobe.setMatch(piece!.id, match);
       navigate("/wardrobe");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Your changes couldn't be saved.");
@@ -131,7 +144,6 @@ export function PieceScreen() {
     setPending(null);
   }
 
-  const photo = wardrobe.links[piece.photo_path];
 
   return (
     <>
@@ -229,6 +241,28 @@ export function PieceScreen() {
             ))}
           </select>
         </label>
+
+        {matchType && (
+          <div>
+            <label className="form-field">
+              <span className="form-label">Matching piece</span>
+              <select value={match ?? ""} onChange={(event) => change({ match: event.target.value || null })}>
+                <option value="">None</option>
+                {candidates.map((other) => (
+                  <option key={other.id} value={other.id}>
+                    {other.name || "Unnamed piece"}
+                    {other.match_id && other.match_id !== piece.id ? " (in another set)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="hint">
+              {matchType === "trousers"
+                ? "Pick its own trousers, like a native top's. The planner always puts the two together, and never with anything else."
+                : "Pick its own top, like a native top's trousers. The planner always puts the two together, and never with anything else."}
+            </p>
+          </div>
+        )}
 
         <label className="form-field">
           <span className="form-label">Colour</span>
