@@ -133,11 +133,11 @@ function outfit(day: string, fields: Partial<Outfit> = {}): Outfit {
 const reload = vi.fn();
 const save = vi.fn(async () => PIECES[0]);
 
-function setup(now: Date, outfits: Outfit[] = []) {
-  vi.mocked(useWardrobe).mockReturnValue({ pieces: PIECES, reload, save } as unknown as ReturnType<typeof useWardrobe>);
+function setup(now: Date, outfits: Outfit[] = [], { pieces = PIECES, undoTime = 5000 } = {}) {
+  vi.mocked(useWardrobe).mockReturnValue({ pieces, reload, save } as unknown as ReturnType<typeof useWardrobe>);
   const supabase = fakeSupabase(outfits);
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <PlanningProvider client={supabase.client} now={() => now} random={() => 0.5}>
+    <PlanningProvider client={supabase.client} now={() => now} random={() => 0.5} undoTime={undoTime}>
       {children}
     </PlanningProvider>
   );
@@ -245,6 +245,118 @@ describe("PlanningProvider", () => {
     expect(rpc).toHaveBeenCalledWith("finish_check", { checked: [], washed: [PIECES[0].id] });
     expect(reload).toHaveBeenCalled();
     expect(save).toHaveBeenCalledWith(PIECES[1].id, { in_wash: true });
+  });
+});
+
+describe("Other outfits for a day", () => {
+  const DAY = "2026-11-11";
+  const base = (o: Outfit | undefined) => [o?.top_id, o?.trousers_id, o?.suit_id, o?.native_set_id].join();
+
+  it("shows a new outfit each time, and goes back through the ones you've seen", async () => {
+    const { hook, db } = setup(WEDNESDAY, [outfit(DAY)]);
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+    const first = base(db.outfits[0]);
+    expect(hook.result.current.canGoBack(DAY)).toBe(false);
+
+    await act(() => hook.result.current.anotherOutfit(DAY));
+    const second = base(db.outfits[0]);
+    await act(() => hook.result.current.anotherOutfit(DAY));
+    const third = base(db.outfits[0]);
+
+    expect(new Set([first, second, third]).size).toBe(3);
+    expect(hook.result.current.canGoBack(DAY)).toBe(true);
+
+    await act(() => hook.result.current.previousOutfit(DAY));
+    expect(base(db.outfits[0])).toBe(second);
+    await act(() => hook.result.current.previousOutfit(DAY));
+    expect(base(db.outfits[0])).toBe(first);
+    expect(hook.result.current.canGoBack(DAY)).toBe(false);
+
+    // Forward again goes through the same ones before making new ones.
+    await act(() => hook.result.current.anotherOutfit(DAY));
+    expect(base(db.outfits[0])).toBe(second);
+  });
+
+  it("says when there's no other outfit", async () => {
+    const few = [PIECES[0], PIECES[7], PIECES[11]];
+    const { hook, db } = setup(WEDNESDAY, [outfit(DAY)], { pieces: few });
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+
+    let worked = true;
+    await act(async () => {
+      worked = await hook.result.current.anotherOutfit(DAY);
+    });
+
+    expect(worked).toBe(false);
+    expect(hook.result.current.error).toMatch(/no other outfit/);
+    expect(db.outfits[0].top_id).toBe(PIECES[0].id);
+  });
+
+  it("starts afresh after you change a piece yourself", async () => {
+    const { hook } = setup(WEDNESDAY, [outfit(DAY)]);
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+
+    await act(() => hook.result.current.anotherOutfit(DAY));
+    await act(() => hook.result.current.swap(DAY, "shoes", PIECES[12].id));
+
+    expect(hook.result.current.canGoBack(DAY)).toBe(false);
+  });
+
+  it("leaves days you've worn alone", async () => {
+    const { hook, db } = setup(WEDNESDAY, [outfit(DAY, { checked_at: "2026-11-11T20:00:00Z", worn: [PIECES[0].id] })]);
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+
+    await act(() => hook.result.current.anotherOutfit(DAY));
+
+    expect(db.outfits[0].top_id).toBe(PIECES[0].id);
+    expect(hook.result.current.error).toMatch(/can't be changed/);
+  });
+});
+
+describe("Marking today worn", () => {
+  const DAY = "2026-11-11";
+
+  it("counts what you wore once the undo time is up", async () => {
+    const { hook, rpc } = setup(WEDNESDAY, [outfit(DAY)], { undoTime: 50 });
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+
+    act(() => hook.result.current.markWorn(DAY));
+    expect(hook.result.current.pendingWorn).toBe(DAY);
+    expect(rpc).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(rpc).toHaveBeenCalled());
+    const [name, args] = rpc.mock.calls[0] as [string, { checked: { id: string; worn: string[] }[]; washed: string[] }];
+    expect(name).toBe("finish_check");
+    expect(args.checked).toHaveLength(1);
+    expect(args.checked[0].id).toBe(`saved-${DAY}`);
+    expect([...args.checked[0].worn].sort()).toEqual([PIECES[0].id, PIECES[7].id, PIECES[11].id].sort());
+    expect(args.washed).toEqual([]);
+    await waitFor(() => expect(hook.result.current.pendingWorn).toBeNull());
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it("does nothing if you undo in time", async () => {
+    const { hook, rpc } = setup(WEDNESDAY, [outfit(DAY)], { undoTime: 50 });
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+
+    act(() => hook.result.current.markWorn(DAY));
+    act(() => hook.result.current.undoWorn());
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(rpc).not.toHaveBeenCalled();
+    expect(hook.result.current.pendingWorn).toBeNull();
+  });
+
+  it("saves straight away if you leave the app before the undo time is up", async () => {
+    const { hook, rpc } = setup(WEDNESDAY, [outfit(DAY)], { undoTime: 60_000 });
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+
+    act(() => hook.result.current.markWorn(DAY));
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("finish_check", expect.anything()));
   });
 });
 

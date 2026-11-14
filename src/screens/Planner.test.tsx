@@ -1,6 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
+import type { Gesture } from "../lib/gestures";
+import { useGestures, useHandControl } from "../lib/handControl";
 import type { Piece } from "../lib/pieces";
 import { usePlanning } from "../lib/planning";
 import { DEFAULT_WEEK, weekStatus, type Outfit } from "../lib/plans";
@@ -14,6 +16,7 @@ import { WeekScreen } from "./WeekScreen";
 
 vi.mock("../lib/wardrobe", () => ({ useWardrobe: vi.fn() }));
 vi.mock("../lib/planning", () => ({ usePlanning: vi.fn() }));
+vi.mock("../lib/handControl", () => ({ useHandControl: vi.fn(), useGestures: vi.fn() }));
 
 function piece(id: string, fields: Partial<Piece> = {}): Piece {
   return {
@@ -73,7 +76,22 @@ const SUNDAY_EVENING = new Date(2026, 10, 15, 18);
 const MONDAY = "2026-11-09";
 const DRESSED = { top_id: TOP.id, trousers_id: TROUSERS.id, shoes_id: SHOES.id };
 
-function setup({ now = WEDNESDAY, outfits = [] as Outfit[], pieces = PIECES, planning = {} } = {}) {
+const hands = { status: "off" as const, problem: null as string | null, start: vi.fn(), stop: vi.fn() };
+
+// Sends a gesture to the open page, the way hand control would, and returns what it would show.
+function gesture(name: Gesture): string | null {
+  const handler = vi.mocked(useGestures).mock.lastCall![0];
+  let shown: string | null = null;
+  act(() => {
+    shown = handler(name);
+  });
+  return shown;
+}
+
+function setup({ now = WEDNESDAY, outfits = [] as Outfit[], pieces = PIECES, planning = {}, handProblem = null as string | null } = {}) {
+  hands.start.mockClear();
+  vi.mocked(useHandControl).mockReturnValue({ ...hands, problem: handProblem });
+  vi.mocked(useGestures).mockClear();
   vi.mocked(useWardrobe).mockReturnValue({
     pieces,
     links: Object.fromEntries(pieces.map((p) => [p.photo_path, `https://example.test/${p.id}.jpg`])),
@@ -90,6 +108,12 @@ function setup({ now = WEDNESDAY, outfits = [] as Outfit[], pieces = PIECES, pla
     reload: vi.fn(),
     planMissing: vi.fn(async () => true),
     replanDay: vi.fn(async () => true),
+    anotherOutfit: vi.fn(async () => true),
+    previousOutfit: vi.fn(async () => true),
+    canGoBack: vi.fn(() => false),
+    pendingWorn: null,
+    markWorn: vi.fn(),
+    undoWorn: vi.fn(),
     setDayType: vi.fn(async () => true),
     swap: vi.fn(async () => true),
     choicesFor: vi.fn(() => []),
@@ -137,6 +161,13 @@ describe("This week", () => {
 
     expect(screen.getByRole("link", { name: /Monday/ })).toHaveTextContent("Not planned");
     expect(screen.getByRole("link", { name: /Monday/ })).not.toHaveTextContent("Not planned yet");
+  });
+
+  it("shows which days you've worn", () => {
+    setup({ outfits: [outfit(MONDAY, { ...DRESSED, checked_at: "2026-11-09T20:00:00Z", worn: [TOP.id] })] });
+    renderAt("/");
+
+    expect(screen.getByRole("link", { name: /Monday/ })).toHaveTextContent("Corporate · Worn");
   });
 
   it("marks today", () => {
@@ -251,13 +282,49 @@ describe("Day page", () => {
     expect(planning.swap).toHaveBeenCalledWith(DAY, "shoes", null);
   });
 
-  it("plans the day again", async () => {
+  it("shows another outfit, and goes back to the one before", async () => {
+    const planning = setup({ outfits: [outfit(DAY, DRESSED)], planning: { canGoBack: vi.fn(() => true) } });
+    renderAt(`/day/${DAY}`);
+
+    await userEvent.click(screen.getByRole("button", { name: "Another outfit" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(planning.anotherOutfit).toHaveBeenCalledWith(DAY);
+    expect(planning.previousOutfit).toHaveBeenCalledWith(DAY);
+  });
+
+  it("only offers Back once there's an outfit to go back to", () => {
+    setup({ outfits: [outfit(DAY, DRESSED)] });
+    renderAt(`/day/${DAY}`);
+
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  it("marks today worn, with a moment to undo it", async () => {
     const planning = setup({ outfits: [outfit(DAY, DRESSED)] });
     renderAt(`/day/${DAY}`);
 
-    await userEvent.click(screen.getByRole("button", { name: "Plan this day again" }));
+    await userEvent.click(screen.getByRole("button", { name: "I wore this" }));
 
-    expect(planning.replanDay).toHaveBeenCalledWith(DAY);
+    expect(planning.markWorn).toHaveBeenCalledWith(DAY);
+  });
+
+  it("shows a day marked worn, with Undo", async () => {
+    const planning = setup({ outfits: [outfit(DAY, DRESSED)], planning: { pendingWorn: DAY } });
+    renderAt(`/day/${DAY}`);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Marked as worn");
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(planning.undoWorn).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "I wore this" })).not.toBeInTheDocument();
+  });
+
+  it("only offers 'I wore this' on today", () => {
+    setup({ outfits: [outfit("2026-11-12", DRESSED)] });
+    renderAt("/day/2026-11-12");
+
+    expect(screen.queryByRole("button", { name: "I wore this" })).not.toBeInTheDocument();
   });
 
   it("offers to plan a day that hasn't been planned", async () => {
@@ -283,6 +350,92 @@ describe("Day page", () => {
     expect(screen.queryByRole("button", { name: /Change/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Kind of day")).not.toBeInTheDocument();
     expect(screen.getByText("White shirt")).toBeInTheDocument();
+  });
+});
+
+describe("Hand control on the day page", () => {
+  const DAY = "2026-11-11";
+
+  it("turns on hand control", async () => {
+    setup({ outfits: [outfit(DAY, DRESSED)] });
+    renderAt(`/day/${DAY}`);
+
+    await userEvent.click(screen.getByRole("button", { name: "Use hand control" }));
+
+    expect(hands.start).toHaveBeenCalled();
+  });
+
+  it("explains why hand control couldn't start", () => {
+    setup({ outfits: [outfit(DAY, DRESSED)], handProblem: "The camera isn't allowed." });
+    renderAt(`/day/${DAY}`);
+
+    expect(screen.getByText("The camera isn't allowed.")).toBeInTheDocument();
+  });
+
+  it("swipes between the days of the week", () => {
+    setup({ outfits: [outfit(DAY, DRESSED)] });
+    renderAt(`/day/${DAY}`);
+
+    expect(gesture("next")).toBe("Next day");
+    expect(screen.getByRole("heading", { name: "Thursday" })).toBeInTheDocument();
+    expect(gesture("previous")).toBe("Day before");
+    expect(gesture("previous")).toBe("Day before");
+    expect(screen.getByRole("heading", { name: "Tuesday" })).toBeInTheDocument();
+  });
+
+  it("stops at the ends of the week", () => {
+    setup();
+    renderAt("/day/2026-11-15");
+
+    expect(gesture("next")).toBe("That's the last day of the week");
+    expect(screen.getByRole("heading", { name: "Sunday" })).toBeInTheDocument();
+  });
+
+  it("flicks through other outfits for the day", () => {
+    const planning = setup({ outfits: [outfit(DAY, DRESSED)], planning: { canGoBack: vi.fn(() => true) } });
+    renderAt(`/day/${DAY}`);
+
+    expect(gesture("another")).toBe("Another outfit");
+    expect(gesture("back")).toBe("Back to the one before");
+    expect(planning.anotherOutfit).toHaveBeenCalledWith(DAY);
+    expect(planning.previousOutfit).toHaveBeenCalledWith(DAY);
+  });
+
+  it("says when there's nothing to go back to, or the day can't change", () => {
+    const planning = setup({
+      outfits: [outfit(MONDAY, { ...DRESSED, checked_at: "2026-11-09T20:00:00Z", worn: [TOP.id] }), outfit(DAY, DRESSED)],
+    });
+    renderAt(`/day/${DAY}`);
+
+    expect(gesture("back")).toBe("No earlier outfit to go back to");
+    gesture("previous");
+    gesture("previous");
+    expect(gesture("another")).toBe("This day is done, so it can't change");
+    expect(planning.previousOutfit).not.toHaveBeenCalled();
+    expect(planning.anotherOutfit).not.toHaveBeenCalled();
+  });
+
+  it("marks today worn with a thumbs up, and only today", () => {
+    const planning = setup({ outfits: [outfit(DAY, DRESSED), outfit("2026-11-12", DRESSED)] });
+    renderAt(`/day/${DAY}`);
+
+    expect(gesture("thumbsUp")).toBe("Marked as worn");
+    expect(planning.markWorn).toHaveBeenCalledWith(DAY);
+
+    gesture("next");
+    expect(gesture("thumbsUp")).toBe("Thumbs up works on today's outfit");
+    expect(planning.markWorn).toHaveBeenCalledTimes(1);
+  });
+
+  it("changes day with a finger swipe", () => {
+    setup({ outfits: [outfit(DAY, DRESSED)] });
+    renderAt(`/day/${DAY}`);
+    const page = screen.getByRole("heading", { name: "Wednesday" }).closest(".day-page")!;
+
+    fireEvent.touchStart(page, { changedTouches: [{ clientX: 300, clientY: 400 }] });
+    fireEvent.touchEnd(page, { changedTouches: [{ clientX: 120, clientY: 410 }] });
+
+    expect(screen.getByRole("heading", { name: "Thursday" })).toBeInTheDocument();
   });
 });
 

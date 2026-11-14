@@ -1,7 +1,7 @@
 import { beltMatchesShoes, readColour, sameAccent, standsOut } from "./colourRules";
 import { buildProfile, type Reading, type StyleOverrides } from "./styleProfile";
 import { defaultWearsFor, type Occasion, type PieceType } from "./pieceTypes";
-import { planDays, swapChoices, SLOTS, type DayPlan, type DayType, type KnownOutfit, type PlannerPiece } from "./planner";
+import { planDays, swapChoices, SLOTS, type DayPlan, type DayType, type KnownOutfit, type PlannerPiece, type Slots } from "./planner";
 import { addDays, daysBetween } from "./week";
 
 // A repeatable stand-in for Math.random, so every run of a test plans the same way.
@@ -379,6 +379,24 @@ describe("planDays", () => {
         avoid: { [MONDAY]: first.slots },
       });
       expect([again.slots.top, again.slots.trousers]).not.toEqual([first.slots.top, first.slots.trousers]);
+    }
+  });
+
+  it("can avoid several outfits already seen for a day", () => {
+    const pieces = basicWardrobe();
+    const seen: Slots[] = [];
+    for (let i = 0; i < 3; i++) {
+      const [next] = planDays({
+        days: week(["corporate"]),
+        pieces,
+        outfits: [],
+        random: seeded(i + 1),
+        avoid: { [MONDAY]: seen },
+      });
+      for (const old of seen) {
+        expect([next.slots.top, next.slots.trousers]).not.toEqual([old.top, old.trousers]);
+      }
+      seen.push(next.slots);
     }
   });
 

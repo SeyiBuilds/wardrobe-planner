@@ -961,6 +961,90 @@ button.outfit-slot {
   color: var(--stitch-deep);
 }
 
+/* Hand control */
+
+.hand-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 12px;
+}
+
+.hand-row .hint {
+  margin-top: 0;
+}
+
+/* Floats just above the tabs while the camera is on. */
+.hand-bar {
+  position: fixed;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "preview text"
+    "preview off";
+  column-gap: 12px;
+  width: calc(min(560px, 100%) - 32px);
+  padding: 10px 12px;
+  border: 1.5px dashed var(--stitch-deep);
+  background: var(--cloth);
+  box-shadow: 0 6px 18px rgb(24 33 58 / 18%);
+  transform: translateX(-50%);
+}
+
+.hand-bar[hidden] {
+  display: none;
+}
+
+/* Mirrored, so moving your hand left moves it left on screen too. */
+.hand-preview {
+  grid-area: preview;
+  width: 64px;
+  height: 86px;
+  border-radius: 2px;
+  background: var(--indigo);
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.hand-text {
+  grid-area: text;
+  min-width: 0;
+}
+
+.hand-status {
+  font-weight: 600;
+}
+
+.hand-progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-top: 4px;
+  accent-color: var(--stitch-deep);
+}
+
+.hand-help {
+  margin-top: 2px;
+  color: var(--slate);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.hand-bar > .text-button {
+  grid-area: off;
+  justify-self: start;
+  min-height: 40px;
+}
+
+/* Room at the bottom of the page, so the bar never covers the last buttons. */
+body:has(.hand-bar:not([hidden])) .shell-main {
+  padding-bottom: 190px;
+}
+
 @media (min-width: 520px) {
   .pieces {
     grid-template-columns: repeat(3, minmax(0, 1fr));
