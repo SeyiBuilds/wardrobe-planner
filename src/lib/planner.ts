@@ -30,7 +30,7 @@ export type DayPlan = { day: string; dayType: DayType; slots: Slots; notes: Note
 export type KnownOutfit = { day: string; slots: Slots; checked: boolean };
 export type PlannerPiece = Pick<
   Piece,
-  "id" | "type" | "formality" | "occasions" | "pattern" | "colours" | "wears_before_wash" | "wears_since_wash" | "in_wash"
+  "id" | "type" | "formality" | "occasions" | "pattern" | "colours" | "wears_before_wash" | "wears_since_wash" | "in_wash" | "match_id"
 >;
 
 const SLOT_TYPE: Record<Slot, PieceType> = {
@@ -66,6 +66,9 @@ const REPEAT = 100;
 const AVOID = 300;
 const NOISE = 6;
 const MAX_BASES = 30;
+// A matching set or a native set is made to go together, so it scores like a well-contrasted pair
+// instead of losing out for being one colour.
+const SET_SCORE = 6;
 
 type Info = {
   piece: PlannerPiece;
@@ -110,10 +113,35 @@ function piecesOf(outfit: Outfit): Info[] {
   return SLOTS.flatMap((slot) => (outfit[slot] ? [outfit[slot]!] : []));
 }
 
+// A top and trousers matched to each other, both ways. Anything else isn't a set.
+function isSet(top: PlannerPiece | undefined, trousers: PlannerPiece | undefined): boolean {
+  return (
+    top?.type === "top" && trousers?.type === "trousers" && top.match_id === trousers.id && trousers.match_id === top.id
+  );
+}
+
+// The other half of a piece's matching set, if it's in a real set.
+function partnerOf(pieces: Map<string, PlannerPiece>, piece: PlannerPiece): PlannerPiece | null {
+  const other = piece.match_id ? pieces.get(piece.match_id) : undefined;
+  if (!other) return null;
+  return isSet(piece, other) || isSet(other, piece) ? other : null;
+}
+
+// A matching set is only ever worn whole: each half goes with its partner and nothing else.
+function keepsSets(pieces: Map<string, PlannerPiece>, top: PlannerPiece, bottom: PlannerPiece): boolean {
+  const topPartner = partnerOf(pieces, top);
+  const bottomPartner = partnerOf(pieces, bottom);
+  if (!topPartner && !bottomPartner) return true;
+  return topPartner?.id === bottom.id;
+}
+
 // The first rule an outfit breaks, worded for the piece in `changed`; null if it keeps them all.
 // `allowTonal` lifts the top-stands-out rule, once your inspiration shows tonal looks.
 function outfitProblem(outfit: Outfit, changed?: Slot, allowTonal = false): string | null {
-  const parts = piecesOf(outfit);
+  // A matching set is made to be worn together, so its two halves count as one piece:
+  // the colour rules between top and trousers don't apply to it.
+  const set = isSet(outfit.top?.piece, outfit.trousers?.piece);
+  const parts = piecesOf(set ? { ...outfit, trousers: undefined } : outfit);
 
   const levels = parts.flatMap((p) => (p.level === null ? [] : [p.level]));
   if (levels.length && Math.max(...levels) - Math.min(...levels) > 1) return "Too dressy or too casual for the rest";
@@ -129,7 +157,7 @@ function outfitProblem(outfit: Outfit, changed?: Slot, allowTonal = false): stri
   const top = outfit.top?.main;
   const bottomSlot = outfit.trousers ? "trousers" : "suit";
   const bottom = outfit[bottomSlot]?.main;
-  if (top && bottom) {
+  if (top && bottom && !set) {
     if (!top.neutral && !bottom.neutral) return "Needs a neutral top or trousers";
     if (!allowTonal && !standsOut(top, bottom)) {
       return changed === "top" ? `Too close to the ${bottomSlot === "suit" ? "suit's" : "trousers'"} colour` : "Too close to the top's colour";
@@ -224,6 +252,8 @@ function dateLabel(day: string) {
 
 type Context = {
   infos: Info[];
+  // Every piece by id, labelled or not, for finding the other half of a matching set.
+  pieces: Map<string, PlannerPiece>;
   ledger: Ledger;
   random: () => number;
   style?: StyleInput;
@@ -422,7 +452,8 @@ function baseScore(ctx: Context, outfit: Outfit, day: string, dayType: DayType, 
 
   const top = outfit.top?.main;
   const bottom = (outfit.trousers ?? outfit.suit)?.main;
-  if (top && bottom) score += (Math.min(Math.abs(top.lightness - bottom.lightness), 40) / 40) * 8;
+  if (outfit.native_set || isSet(outfit.top?.piece, outfit.trousers?.piece)) score += SET_SCORE;
+  else if (top && bottom) score += (Math.min(Math.abs(top.lightness - bottom.lightness), 40) / 40) * 8;
 
   const levels = new Set(parts.map((p) => p.level));
   if (levels.size === 1) score += 3;
@@ -450,6 +481,7 @@ function planDay(ctx: Context, day: string, dayType: DayType, avoid: Slots[]): D
   const bases: { outfit: Outfit; score: number }[] = [];
   for (const top of tops) {
     for (const bottom of bottoms) {
+      if (!keepsSets(ctx.pieces, top.piece, bottom.piece)) continue;
       const outfit: Outfit = { top, [bottom.piece.type === "suit" ? "suit" : "trousers"]: bottom };
       if (!outfitProblem(outfit, undefined, allowTonal)) bases.push({ outfit, score: baseScore(ctx, outfit, day, dayType, avoid) });
     }
@@ -476,16 +508,20 @@ function planDay(ctx: Context, day: string, dayType: DayType, avoid: Slots[]): D
   }
   const freshest = (list: Info[]) =>
     [...list].sort((a, b) => ctx.ledger.freshness(b.piece.id, day) - ctx.ledger.freshness(a.piece.id, day))[0];
+  // Half a matching set is never planned on its own.
+  const loose = (list: Info[]) => list.filter((info) => !partnerOf(ctx.pieces, info.piece));
+  const looseTops = loose(tops);
+  const looseBottoms = loose(bottoms);
   const partial: Outfit = {};
   const notes: Note[] = [];
   let score = 0;
-  if (tops.length) partial.top = freshest(tops);
+  if (looseTops.length) partial.top = freshest(looseTops);
   else {
     notes.push({ slot: "top", text: emptyReason(ctx, "top", day, dayType) });
     score -= MISSING_MAIN;
   }
-  if (!partial.top && bottoms.length) {
-    const bottom = freshest(bottoms);
+  if (!partial.top && looseBottoms.length) {
+    const bottom = freshest(looseBottoms);
     partial[bottom.piece.type === "suit" ? "suit" : "trousers"] = bottom;
   } else {
     notes.push({ slot: "trousers", text: emptyReason(ctx, "trousers", day, dayType) });
@@ -528,10 +564,11 @@ export function planDays({
   const planning = new Set(days.map((d) => d.day));
   const known = outfits.filter((outfit) => !planning.has(outfit.day));
   const infos = pieces.filter(isLabelled).map(toInfo);
+  const byId = new Map(pieces.map((piece) => [piece.id, piece]));
 
   let best: { total: number; results: Map<string, DayResult> } | null = null;
   for (let run = 0; run < RUNS; run++) {
-    const ctx: Context = { infos, ledger: new Ledger(known), random, style };
+    const ctx: Context = { infos, pieces: byId, ledger: new Ledger(known), random, style };
     const order = run === 0 ? [...days] : shuffle([...days], random);
     const results = new Map<string, DayResult>();
     let total = 0;
@@ -573,6 +610,9 @@ export function swapChoices({
   const ledger = new Ledger(outfits.filter((outfit) => outfit.day !== day));
   const infos = pieces.map(toInfo);
   const byId = new Map(infos.map((info) => [info.piece.id, info]));
+  const piecesById = new Map(pieces.map((piece) => [piece.id, piece]));
+  // The top and trousers slots go together in a set; the others don't.
+  const otherHalf = slot === "top" ? "trousers" : slot === "trousers" ? "top" : null;
 
   const rest: Outfit = {};
   for (const other of SLOTS) {
@@ -584,6 +624,13 @@ export function swapChoices({
     if (!goodFor(info, dayType)) return `Not marked Good for ${dayType}`;
     if (ledger.usedOn(info.piece.id, addDays(day, -1))) return "Worn the day before";
     if (ledger.usedOn(info.piece.id, addDays(day, 1))) return "Planned for the next day";
+    if (otherHalf) {
+      const staying = rest[otherHalf]?.piece;
+      const stayingPartner = staying ? partnerOf(piecesById, staying) : null;
+      if (stayingPartner && stayingPartner.id !== info.piece.id) return "Breaks up a matching set";
+      const partner = partnerOf(piecesById, info.piece);
+      if (partner && partner.id !== staying?.id) return "Part of a matching set";
+    }
     return outfitProblem({ ...rest, [slot]: info }, slot, tonalAllowed(style, dayType));
   };
 

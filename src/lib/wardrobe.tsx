@@ -5,7 +5,9 @@ import { drainQueue } from "./labelQueue";
 import { PhotoError, preparePhoto } from "./photo";
 import {
   addPiece,
+  afterMatch,
   listPieces,
+  matchPieces,
   photoLinks,
   removePiece,
   requestLabel,
@@ -31,6 +33,8 @@ type Wardrobe = {
   addPhotos: (files: File[]) => Promise<void>;
   save: (id: string, changes: PieceChanges) => Promise<Piece>;
   remove: (piece: Piece) => Promise<void>;
+  // Matches a top with its own trousers, or unmatches it with null.
+  setMatch: (id: string, partner: string | null) => Promise<void>;
   readAgain: (id: string) => Promise<void>;
   resumeReading: () => void;
   reload: () => void;
@@ -194,6 +198,14 @@ export function WardrobeProvider({ client, children }: { client: SupabaseClient;
     [client, updatePieces],
   );
 
+  const setMatch = useCallback(
+    async (id: string, partner: string | null) => {
+      await matchPieces(client, id, partner);
+      updatePieces((current) => afterMatch(current, id, partner));
+    },
+    [client, updatePieces],
+  );
+
   const readAgain = useCallback(
     async (id: string) => {
       await save(id, { label_status: "waiting" });
@@ -214,12 +226,13 @@ export function WardrobeProvider({ client, children }: { client: SupabaseClient;
       addPhotos,
       save,
       remove,
+      setMatch,
       readAgain,
       resumeReading: () => void drain(),
       reload: () => void load(),
       clearAddErrors: () => setAddErrors([]),
     }),
-    [pieces, loadError, links, unpacking, adding, addErrors, queue, addPhotos, save, remove, readAgain, drain, load],
+    [pieces, loadError, links, unpacking, adding, addErrors, queue, addPhotos, save, remove, setMatch, readAgain, drain, load],
   );
 
   return <WardrobeContext.Provider value={value}>{children}</WardrobeContext.Provider>;
