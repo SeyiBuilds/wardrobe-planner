@@ -50,6 +50,19 @@ const PIECES = [
 function fakeSupabase(outfits: Outfit[] = []) {
   const db = { outfits: [...outfits], usualWeek: null as string[] | null, pieces: PIECES };
   const rpc = vi.fn(async (_name: string, _args: unknown) => ({ data: null, error: null }));
+  // Lets a test hold every request until it says go, like a slow connection, or make saves fail.
+  let gate: Promise<void> = Promise.resolve();
+  const hold = () => {
+    let release = () => {};
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      release();
+      gate = Promise.resolve();
+    };
+  };
+  const failures = { updates: false };
   let nextId = 1;
 
   function respond(table: string, ops: [string, ...unknown[]][]) {
@@ -71,6 +84,7 @@ function fakeSupabase(outfits: Outfit[] = []) {
       return { data: saved, error: null };
     }
     const update = op("update");
+    if (update && failures.updates) return { data: null, error: { message: "offline" } };
     if (update) {
       const id = op("eq")![2];
       const outfit = { ...db.outfits.find((o) => o.id === id)!, ...(update[1] as Partial<Outfit>) };
@@ -88,7 +102,7 @@ function fakeSupabase(outfits: Outfit[] = []) {
         get(_target, prop: string) {
           if (prop === "then") {
             return (resolve: (value: unknown) => void, reject: (reason: unknown) => void) =>
-              Promise.resolve(respond(table, ops)).then(resolve, reject);
+              gate.then(() => respond(table, ops)).then(resolve, reject);
           }
           return (...args: unknown[]) => {
             ops.push([prop, ...args]);
@@ -105,7 +119,7 @@ function fakeSupabase(outfits: Outfit[] = []) {
     from,
     rpc,
   } as unknown as SupabaseClient;
-  return { client, db, rpc };
+  return { client, db, rpc, hold, failures };
 }
 
 function outfit(day: string, fields: Partial<Outfit> = {}): Outfit {
@@ -275,6 +289,52 @@ describe("Other outfits for a day", () => {
     // Forward again goes through the same ones before making new ones.
     await act(() => hook.result.current.anotherOutfit(DAY));
     expect(base(db.outfits[0])).toBe(second);
+  });
+
+  it("shows the next outfit straight away, and saves them in order", async () => {
+    const { hook, db, hold } = setup(WEDNESDAY, [outfit(DAY)]);
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+    const first = base(db.outfits[0]);
+    const release = hold();
+
+    let another: Promise<boolean> = Promise.resolve(true);
+    act(() => {
+      another = hook.result.current.anotherOutfit(DAY);
+    });
+    expect(base(hook.result.current.outfits![0])).not.toBe(first);
+    expect(base(db.outfits[0])).toBe(first);
+    expect(hook.result.current.canGoBack(DAY)).toBe(true);
+
+    let back: Promise<boolean> = Promise.resolve(true);
+    act(() => {
+      back = hook.result.current.previousOutfit(DAY);
+    });
+    expect(base(hook.result.current.outfits![0])).toBe(first);
+
+    release();
+    await act(async () => {
+      await another;
+      await back;
+    });
+    expect(base(db.outfits[0])).toBe(first);
+    expect(base(hook.result.current.outfits![0])).toBe(first);
+  });
+
+  it("puts back what's saved when a change can't be saved", async () => {
+    const { hook, db, failures } = setup(WEDNESDAY, [outfit(DAY)]);
+    await waitFor(() => expect(hook.result.current.outfits).toHaveLength(1));
+    const first = base(db.outfits[0]);
+    failures.updates = true;
+
+    let worked = true;
+    await act(async () => {
+      worked = await hook.result.current.anotherOutfit(DAY);
+    });
+
+    expect(worked).toBe(false);
+    expect(hook.result.current.error).toMatch(/couldn't be saved/);
+    expect(base(hook.result.current.outfits![0])).toBe(first);
+    expect(hook.result.current.canGoBack(DAY)).toBe(false);
   });
 
   it("says when there's no other outfit", async () => {

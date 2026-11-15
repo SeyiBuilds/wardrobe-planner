@@ -401,6 +401,16 @@ describe("Hand control on the day page", () => {
     expect(planning.previousOutfit).toHaveBeenCalledWith(DAY);
   });
 
+  it("keeps up with quick swipes while the last change is still saving", () => {
+    const planning = setup({ outfits: [outfit(DAY, DRESSED)], planning: { working: true, canGoBack: vi.fn(() => true) } });
+    renderAt(`/day/${DAY}`);
+
+    expect(gesture("another")).toBe("Another outfit");
+    expect(gesture("back")).toBe("Back to the one before");
+    expect(planning.anotherOutfit).toHaveBeenCalledWith(DAY);
+    expect(planning.previousOutfit).toHaveBeenCalledWith(DAY);
+  });
+
   it("says when there's nothing to go back to, or the day can't change", () => {
     const planning = setup({
       outfits: [outfit(MONDAY, { ...DRESSED, checked_at: "2026-11-09T20:00:00Z", worn: [TOP.id] }), outfit(DAY, DRESSED)],

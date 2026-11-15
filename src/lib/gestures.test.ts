@@ -65,9 +65,17 @@ describe("hand swipes", () => {
   it("doesn't join up movements from before your hand left the picture", () => {
     const tracker = new GestureTracker();
     run(move([0.75, 0.5], [0.6, 0.5], 130), tracker);
-    tracker.update({ time: 200, hand: null, thumbUp: false });
+    for (let time = 200; time <= 500; time += FRAME) tracker.update({ time, hand: null, thumbUp: false });
 
-    expect(run(move([0.6, 0.5], [0.5, 0.5], 130, 266), tracker)).toEqual([]);
+    expect(run(move([0.6, 0.5], [0.45, 0.5], 130, 530), tracker)).toEqual([]);
+  });
+
+  it("keeps a quick swipe going when the camera loses your hand for a frame or two", () => {
+    const frames = move([0.8, 0.5], [0.3, 0.5], 330);
+    // A quick flick blurs, so the middle of it isn't seen.
+    for (const i of [2, 3]) frames[i] = { ...frames[i], hand: null };
+
+    expect(run(frames)).toEqual(["next"]);
   });
 });
 
