@@ -240,15 +240,38 @@ export function PlanningProvider({
     return { list: [{ slots, notes: outfit.notes }], at: 0 };
   }, []);
 
+  // Flicking through outfits shows each one straight away. Saves follow one at a time, in the
+  // order they were made, so a slow connection never leaves you waiting or saves them out of order.
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+
   const showFromTrail = useCallback(
     async (outfit: Outfit, trail: Trail, at: number) => {
       const next = trail.list[at];
-      merge([await updateOutfit(client, outfit.id, outfitChanges(next.slots, next.notes))]);
+      const changes = outfitChanges(next.slots, next.notes);
+      merge([{ ...outfit, ...changes } as Outfit]);
       trail.at = at;
       trails.current.set(outfit.day, trail);
       setTrailTick((value) => value + 1);
+
+      const save = saving.current.then(() => updateOutfit(client, outfit.id, changes));
+      saving.current = save.catch(() => {});
+      try {
+        const saved = await save;
+        // A later change may be showing by now; only take the saved row if this one still is.
+        if (trails.current.get(outfit.day) === trail && trail.at === at) merge([saved]);
+      } catch (error) {
+        // Show what's really saved again, and start the trail afresh from it.
+        trails.current.delete(outfit.day);
+        setTrailTick((value) => value + 1);
+        try {
+          replaceAll(await listOutfits(client, historyStart()));
+        } catch {
+          // Offline: keep what's showing; the error below says what went wrong.
+        }
+        throw error;
+      }
     },
-    [client, merge],
+    [client, historyStart, merge, replaceAll],
   );
 
   const anotherOutfit = useCallback(

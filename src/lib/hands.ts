@@ -21,8 +21,11 @@ const SETUP_LIMIT = 60_000;
 const FRAME_GAP = 66;
 // How sure the model has to be that it's a thumbs up.
 const THUMB_SCORE = 0.6;
-// The wrist and the knuckles of the index, middle and little fingers: their middle is the palm.
-const PALM_POINTS = [0, 5, 9, 17];
+// The tip of the index finger: it leads whether you point one finger, two, or show your hand.
+const INDEX_TIP = 8;
+// How sure MediaPipe has to be that it's found a hand, still sees it, and is following it.
+// Lower than its defaults, so a pointing hand or a quick flick isn't lost.
+const HAND_CONFIDENCE = 0.3;
 
 export class HandError extends Error {
   constructor(readonly kind: "unsupported" | "stalled" | "download" | "setup") {
@@ -46,14 +49,12 @@ export function frameFrom(reading: Reading, time: number): HandFrame {
   const points = reading.landmarks[0];
   if (!points || points.length < 21) return { time, hand: null, thumbUp: false };
 
-  const palm = PALM_POINTS.map((index) => points[index]);
-  const x = palm.reduce((sum, point) => sum + point.x, 0) / palm.length;
-  const y = palm.reduce((sum, point) => sum + point.y, 0) / palm.length;
+  const tip = points[INDEX_TIP];
   const best = reading.gestures[0]?.[0];
   return {
     time,
     // The camera sees you the other way round; flipping makes left your left.
-    hand: { x: 1 - x, y },
+    hand: { x: 1 - tip.x, y: tip.y },
     thumbUp: best?.categoryName === "Thumb_Up" && best.score >= THUMB_SCORE,
   };
 }
@@ -199,6 +200,9 @@ function createRecognizer(model: Uint8Array): Promise<GestureRecognizer> {
       baseOptions: { modelAssetBuffer: model, delegate: "CPU" },
       runningMode: "VIDEO",
       numHands: 1,
+      minHandDetectionConfidence: HAND_CONFIDENCE,
+      minHandPresenceConfidence: HAND_CONFIDENCE,
+      minTrackingConfidence: HAND_CONFIDENCE,
     });
   })();
   loading.catch(() => {

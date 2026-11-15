@@ -3,8 +3,8 @@
 
 export type Gesture = "next" | "previous" | "another" | "back" | "thumbsUp";
 
-// One camera frame. `hand` is the middle of your palm from 0 to 1 across and down the picture,
-// as you see yourself in a mirror, or null when no hand is in view.
+// One camera frame. `hand` is the tip of your index finger from 0 to 1 across and down the
+// picture, as you see yourself in a mirror, or null when no hand is in view.
 export type HandFrame = { time: number; hand: { x: number; y: number } | null; thumbUp: boolean };
 
 export type Touch = { x: number; y: number; time: number };
@@ -16,6 +16,9 @@ export const SWIPE_TIME = 450;
 const DIRECTION_RATIO = 1.5;
 // After a swipe, give your hand time to come back without that counting as a swipe too.
 export const COOLDOWN = 900;
+// A quick flick blurs, and the camera can lose the hand for a frame or two. Only a longer
+// gap means the hand has really gone.
+const HAND_GRACE = 250;
 // How long a thumbs up is held before it counts, and how long a missed frame is forgiven.
 export const THUMB_HOLD = 800;
 const THUMB_GRACE = 250;
@@ -24,6 +27,7 @@ type Point = { x: number; y: number; time: number };
 
 export class GestureTracker {
   private trail: Point[] = [];
+  private lastSeen = -Infinity;
   private quietUntil = -Infinity;
   private thumbSince: number | null = null;
   private thumbLastSeen = -Infinity;
@@ -40,9 +44,10 @@ export class GestureTracker {
 
   private trackSwipe({ time, hand }: HandFrame): Gesture | null {
     if (!hand) {
-      this.trail = [];
+      if (time - this.lastSeen > HAND_GRACE) this.trail = [];
       return null;
     }
+    this.lastSeen = time;
     if (time < this.quietUntil) return null;
 
     this.trail.push({ x: hand.x, y: hand.y, time });

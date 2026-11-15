@@ -49,13 +49,11 @@ export function DayScreen() {
         if (!outfit) return "This day hasn't been planned yet";
         if (locked) return "This day is done, so it can't change";
         if (outfit.day_type === "none") return "No outfit planned for this day";
-        if (planning.working) return null;
         void planning.anotherOutfit(day);
         return "Another outfit";
       case "back":
         if (locked) return "This day is done, so it can't change";
         if (!planning.canGoBack(day)) return "No earlier outfit to go back to";
-        if (planning.working) return null;
         void planning.previousOutfit(day);
         return "Back to the one before";
       case "thumbsUp":
@@ -243,24 +241,16 @@ export function DayScreen() {
       )}
 
       {!locked && outfit.day_type !== "none" && (
+        // Both change the screen straight away and save in order behind it, so they stay
+        // usable while an earlier change is still saving.
         <div className="button-row">
           {planning.canGoBack(day) && (
-            <button
-              type="button"
-              className="action-button is-quiet"
-              disabled={planning.working}
-              onClick={() => void planning.previousOutfit(day)}
-            >
+            <button type="button" className="action-button is-quiet" onClick={() => void planning.previousOutfit(day)}>
               Back
             </button>
           )}
-          <button
-            type="button"
-            className="action-button is-quiet"
-            disabled={planning.working}
-            onClick={() => void planning.anotherOutfit(day)}
-          >
-            {planning.working ? "Planning…" : "Another outfit"}
+          <button type="button" className="action-button is-quiet" onClick={() => void planning.anotherOutfit(day)}>
+            Another outfit
           </button>
         </div>
       )}
