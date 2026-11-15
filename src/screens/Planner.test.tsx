@@ -293,6 +293,17 @@ describe("Day page", () => {
     expect(planning.previousOutfit).toHaveBeenCalledWith(DAY);
   });
 
+  it("lets you tap Another outfit and Back while the last change is still saving", async () => {
+    const planning = setup({ outfits: [outfit(DAY, DRESSED)], planning: { working: true, canGoBack: vi.fn(() => true) } });
+    renderAt(`/day/${DAY}`);
+
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("button", { name: "Another outfit" }));
+
+    expect(planning.previousOutfit).toHaveBeenCalledWith(DAY);
+    expect(planning.anotherOutfit).toHaveBeenCalledWith(DAY);
+  });
+
   it("only offers Back once there's an outfit to go back to", () => {
     setup({ outfits: [outfit(DAY, DRESSED)] });
     renderAt(`/day/${DAY}`);

@@ -241,24 +241,16 @@ export function DayScreen() {
       )}
 
       {!locked && outfit.day_type !== "none" && (
+        // Both change the screen straight away and save in order behind it, so they stay
+        // usable while an earlier change is still saving.
         <div className="button-row">
           {planning.canGoBack(day) && (
-            <button
-              type="button"
-              className="action-button is-quiet"
-              disabled={planning.working}
-              onClick={() => void planning.previousOutfit(day)}
-            >
+            <button type="button" className="action-button is-quiet" onClick={() => void planning.previousOutfit(day)}>
               Back
             </button>
           )}
-          <button
-            type="button"
-            className="action-button is-quiet"
-            disabled={planning.working}
-            onClick={() => void planning.anotherOutfit(day)}
-          >
-            {planning.working ? "Planning…" : "Another outfit"}
+          <button type="button" className="action-button is-quiet" onClick={() => void planning.anotherOutfit(day)}>
+            Another outfit
           </button>
         </div>
       )}
