@@ -3,14 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import type { Gesture, HandFrame } from "./gestures";
 import { HandControlProvider, useGestures, useHandControl } from "./handControl";
-import type { HandSource } from "./hands";
+import { HandError, type HandSource, type LoadStep } from "./hands";
 
 // Stands in for the camera: frames are pushed in by the test.
 function fakeCamera() {
   let onFrame: ((frame: HandFrame) => void) | null = null;
   const stop = vi.fn();
-  const source = vi.fn<HandSource>(async (_video, callback) => {
-    onFrame = callback;
+  const source = vi.fn<HandSource>(async (_video, options) => {
+    onFrame = options.onFrame;
     return stop;
   });
   const push = (frame: HandFrame) => act(() => onFrame!(frame));
@@ -132,6 +132,58 @@ describe("hand control", () => {
     Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
 
     expect(camera.stop).toHaveBeenCalled();
+  });
+
+  it("shows each step while hand tracking loads", async () => {
+    const hooks: { onStep?: (step: LoadStep) => void; finish?: (stop: () => void) => void } = {};
+    const source = vi.fn<HandSource>((_video, options) => {
+      hooks.onStep = options.onStep;
+      return new Promise((resolve) => {
+        hooks.finish = resolve;
+      });
+    });
+    setup({ source });
+
+    await userEvent.click(screen.getByRole("button", { name: "Use hand control" }));
+    const bar = await screen.findByRole("region", { name: "Hand control" });
+    expect(bar).toHaveTextContent("Starting the camera…");
+
+    act(() => hooks.onStep!({ step: "download", fraction: 0.4 }));
+    expect(bar).toHaveTextContent("Loading hand tracking: 40%");
+    expect(bar).toHaveTextContent("only slow the first time");
+
+    act(() => hooks.onStep!({ step: "setup" }));
+    expect(bar).toHaveTextContent("Getting hand tracking ready…");
+
+    await act(async () => hooks.finish!(vi.fn()));
+    expect(bar).toHaveTextContent("Show your hand to the camera");
+  });
+
+  it("stops loading when you turn it off", async () => {
+    const hooks: { signal?: AbortSignal } = {};
+    const source = vi.fn<HandSource>((_video, options) => {
+      hooks.signal = options.signal;
+      return new Promise(() => {});
+    });
+    setup({ source });
+    await userEvent.click(screen.getByRole("button", { name: "Use hand control" }));
+    await screen.findByRole("region", { name: "Hand control" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Turn off" }));
+
+    expect(hooks.signal!.aborted).toBe(true);
+    expect(screen.queryByRole("region", { name: "Hand control" })).not.toBeInTheDocument();
+  });
+
+  it("says which step got stuck", async () => {
+    const source = vi.fn<HandSource>(async () => {
+      throw new HandError("setup");
+    });
+    setup({ source });
+
+    await userEvent.click(screen.getByRole("button", { name: "Use hand control" }));
+
+    expect(await screen.findByText(/stuck while getting ready/)).toBeInTheDocument();
   });
 
   it("explains when the camera isn't allowed", async () => {
