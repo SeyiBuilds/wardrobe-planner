@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
 import { GestureTracker, type Gesture, type HandFrame } from "./gestures";
-import { cameraProblem, cameraSource, type HandSource } from "./hands";
+import { cameraProblem, cameraSource, type HandSource, type LoadStep } from "./hands";
 
 type Status = "off" | "starting" | "on";
 
@@ -37,6 +37,9 @@ export function HandControlProvider({
   const [handSeen, setHandSeen] = useState(false);
   const [thumbProgress, setThumbProgress] = useState(0);
   const [flash, setFlash] = useState<string | null>(null);
+  // Where starting has got to: the camera, the download, or getting ready.
+  const [loading, setLoading] = useState<LoadStep | null>(null);
+  const abort = useRef<AbortController | null>(null);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -51,8 +54,11 @@ export function HandControlProvider({
 
   const stop = useCallback((reason: string | null = null) => {
     attempt.current++;
+    abort.current?.abort();
+    abort.current = null;
     stopCamera.current?.();
     stopCamera.current = null;
+    setLoading(null);
     setStatus("off");
     setProblem(reason);
     setHandSeen(false);
@@ -80,19 +86,31 @@ export function HandControlProvider({
   const start = useCallback(async () => {
     if (stopCamera.current || !videoRef.current) return;
     const mine = ++attempt.current;
+    const controller = new AbortController();
+    abort.current = controller;
     setStatus("starting");
     setProblem(null);
+    setLoading({ step: "camera" });
     tracker.current = new GestureTracker();
     try {
-      const stopThis = await source(videoRef.current, (frame) => {
-        if (attempt.current === mine) onFrame(frame);
+      const stopThis = await source(videoRef.current, {
+        onFrame: (frame) => {
+          if (attempt.current === mine) onFrame(frame);
+        },
+        onStep: (step) => {
+          // Whole percents are enough, and save redrawing for every piece of the download.
+          if (attempt.current === mine) setLoading((current) => (sameStep(current, step) ? current : step));
+        },
+        signal: controller.signal,
       });
       if (attempt.current !== mine) {
         stopThis();
         return;
       }
       stopCamera.current = stopThis;
+      abort.current = null;
       lastHand.current = Date.now();
+      setLoading(null);
       setStatus("on");
     } catch (error) {
       if (attempt.current === mine) stop(cameraProblem(error));
@@ -154,7 +172,11 @@ export function HandControlProvider({
 
   const showing = status !== "off" && isDayPage(pathname);
   let message = "Starting the camera…";
-  if (status === "on") {
+  if (status === "starting" && loading?.step === "download") {
+    message = `Loading hand tracking: ${Math.round(loading.fraction * 100)}%`;
+  } else if (status === "starting" && loading?.step === "setup") {
+    message = "Getting hand tracking ready…";
+  } else if (status === "on") {
     message = flash ?? (thumbProgress > 0 ? "Keep holding…" : handSeen ? "I can see your hand" : "Show your hand to the camera");
   }
 
@@ -171,7 +193,9 @@ export function HandControlProvider({
             <progress className="hand-progress" value={thumbProgress} max={1} aria-label="Thumbs up held" />
           )}
           <p className="hand-help">
-            Swipe left or right for days, up for another outfit, down to go back. Thumbs up when you've worn today's.
+            {status === "starting" && loading?.step === "download"
+              ? "It's only slow the first time. After that, your phone keeps it."
+              : "Swipe left or right for days, up for another outfit, down to go back. Thumbs up when you've worn today's."}
           </p>
         </div>
         <button type="button" className="text-button is-strong" onClick={() => stop()}>
@@ -180,6 +204,12 @@ export function HandControlProvider({
       </section>
     </HandContext.Provider>
   );
+}
+
+function sameStep(a: LoadStep | null, b: LoadStep): boolean {
+  if (!a || a.step !== b.step) return false;
+  if (a.step === "download" && b.step === "download") return Math.round(a.fraction * 100) === Math.round(b.fraction * 100);
+  return true;
 }
 
 export function useHandControl(): HandControl {
