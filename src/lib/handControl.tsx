@@ -195,7 +195,7 @@ export function HandControlProvider({
           <p className="hand-help">
             {status === "starting" && loading?.step === "download"
               ? "It's only slow the first time. After that, your phone keeps it."
-              : "Point a finger or two. Swipe left or right for days, up for another outfit, down to go back. Thumbs up when you've worn today's."}
+              : "Show your open palm. Swipe left or right for days, up for another outfit, down to go back. Thumbs up when you've worn today's."}
           </p>
         </div>
         <button type="button" className="text-button is-strong" onClick={() => stop()}>
