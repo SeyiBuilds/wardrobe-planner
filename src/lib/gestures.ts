@@ -3,8 +3,8 @@
 
 export type Gesture = "next" | "previous" | "another" | "back" | "thumbsUp";
 
-// One camera frame. `hand` is the tip of your index finger from 0 to 1 across and down the
-// picture, as you see yourself in a mirror, or null when no hand is in view.
+// One camera frame. `hand` is the middle of your palm from 0 to 1 across and down the picture,
+// as you see yourself in a mirror, or null when no hand is in view.
 export type HandFrame = { time: number; hand: { x: number; y: number } | null; thumbUp: boolean };
 
 export type Touch = { x: number; y: number; time: number };
